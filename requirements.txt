@@ -1,0 +1,9 @@
+streamlit
+pandas
+numpy
+scikit-learn
+duckdb
+pyarrow
+plotly
+nba_api
+tenacity
