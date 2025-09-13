@@ -20,15 +20,21 @@ This repository contains the codebase for an NBA Data Dashboard, a tool designed
     cd nba-data-dashboard
     ```
 3. Install dependencies:
+    ```bash
     python -m venv venv
     source venv/bin/activate  
     pip install -r requirements.txt
+    ```
 
 4. Run ETL:
+    ```bash
     python etl/nba_etl.py
+    ```
 
 5. Start the app:
+    ```bash
     streamlit run app.py
+    ```
 
 ## Technologies Used
 
