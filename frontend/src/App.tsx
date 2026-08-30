@@ -56,7 +56,6 @@ export default function App() {
       <header className="sticky top-0 z-20 border-b border-border bg-bg/80 backdrop-blur">
         <div className="mx-auto flex max-w-7xl items-center justify-between px-6 py-4">
           <div className="flex items-center gap-3">
-            <div className="grid h-8 w-8 place-items-center rounded-lg bg-accent text-black font-bold">🏀</div>
             <div>
               <div className="text-[15px] font-semibold leading-tight">Hoops Data Dashboard</div>
               <div className="text-xs text-mute">
@@ -67,7 +66,11 @@ export default function App() {
           </div>
           <div className="flex items-center gap-3 text-xs text-mute">
             <LeagueToggle leagues={leagues} active={league} onChange={setLeague} />
-            <span className="chip">{meta.seasons.length} seasons · local parquet</span>
+            <span className="chip">
+              {meta.seasons.length > 1
+                ? `${meta.seasons[0]}–${meta.seasons[meta.seasons.length - 1]}`
+                : meta.seasons[0]}
+            </span>
           </div>
         </div>
       </header>
