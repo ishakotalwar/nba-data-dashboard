@@ -1,0 +1,69 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+:root {
+  color-scheme: dark;
+}
+
+html,
+body,
+#root {
+  height: 100%;
+  background: #0b0d10;
+  color: #e6eaf0;
+  font-feature-settings: "cv11", "ss01", "ss03";
+}
+
+body {
+  font-family: "Inter", ui-sans-serif, system-ui, -apple-system, sans-serif;
+  -webkit-font-smoothing: antialiased;
+}
+
+/* subtle scrollbars */
+::-webkit-scrollbar {
+  width: 10px;
+  height: 10px;
+}
+::-webkit-scrollbar-thumb {
+  background: #1f2630;
+  border-radius: 10px;
+}
+::-webkit-scrollbar-thumb:hover {
+  background: #2a3240;
+}
+
+/* plotly dark fix */
+.js-plotly-plot .plotly .modebar {
+  right: 4px !important;
+}
+
+@layer components {
+  .card {
+    @apply rounded-2xl border border-border bg-panel shadow-card;
+  }
+  .card-header {
+    @apply flex items-center justify-between gap-3 px-5 pt-4;
+  }
+  .card-body {
+    @apply p-5;
+  }
+  .label {
+    @apply text-[11px] uppercase tracking-wider text-mute font-medium;
+  }
+  .chip {
+    @apply inline-flex items-center gap-1 rounded-full border border-border bg-bg/60 px-2.5 py-0.5 text-xs text-ink/80;
+  }
+  .btn {
+    @apply inline-flex items-center justify-center gap-2 rounded-lg px-3.5 py-2 text-sm font-medium transition;
+  }
+  .btn-primary {
+    @apply bg-accent text-black hover:brightness-110 active:brightness-95;
+  }
+  .btn-ghost {
+    @apply border border-border bg-panel text-ink hover:bg-border;
+  }
+  .input {
+    @apply w-full rounded-lg border border-border bg-bg/60 px-3 py-2 text-sm text-ink placeholder:text-mute focus:outline-none focus:ring-2 focus:ring-accent/40;
+  }
+}

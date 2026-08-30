@@ -1,9 +1,13 @@
 streamlit
+fastapi
+uvicorn[standard]
 pandas
 numpy
 scikit-learn
+scipy
 duckdb
 pyarrow
 plotly
 nba_api
 tenacity
+pydantic
