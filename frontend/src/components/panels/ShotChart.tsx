@@ -5,7 +5,7 @@ import { PlayerCombobox } from "@/components/ui/PlayerCombobox";
 import { Select } from "@/components/ui/Select";
 import { Plot } from "@/components/ui/Plot";
 import { ErrorNotice } from "@/components/ui/ErrorNotice";
-import { courtShapes, courtAxis } from "@/lib/court";
+import { buildCourtShapes, courtAxis } from "@/lib/court";
 import { cn } from "@/lib/cn";
 
 export function ShotChart({ meta }: { meta: Meta }) {
@@ -20,7 +20,7 @@ export function ShotChart({ meta }: { meta: Meta }) {
     setLoading(true);
     setErr(null);
     try {
-      const d = await api.shots(player, season, mode);
+      const d = await api.shots(player, season, mode, meta.league);
       setData(d);
     } catch (e: any) {
       setErr(e.message);
@@ -94,7 +94,7 @@ export function ShotChart({ meta }: { meta: Meta }) {
       <Card>
         <CardHeader
           title="Shot chart"
-          subtitle="Live from stats.nba.com. Hex mode bins shots into zones — color shows FG% vs. this player's season average, size shows volume."
+          subtitle="Hex mode bins shots into zones — color shows FG% vs. this player's season average, size shows volume."
         />
         <CardBody className="space-y-4">
           <div className="grid gap-3 md:grid-cols-3">
@@ -146,7 +146,7 @@ export function ShotChart({ meta }: { meta: Meta }) {
             <Plot
               data={traces as any}
               layout={{
-                shapes: courtShapes as any,
+                shapes: buildCourtShapes(meta.court) as any,
                 ...courtAxis,
                 margin: { t: 10, l: 10, r: 10, b: 10 },
                 showlegend: false,

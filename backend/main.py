@@ -1,18 +1,19 @@
-"""FastAPI backend for the NBA Data Dashboard."""
+"""FastAPI backend for the basketball data dashboard (NBA + WNBA)."""
 from __future__ import annotations
 
 from typing import Any
 
 import numpy as np
 import pandas as pd
-from fastapi import FastAPI, HTTPException, Query
+from fastapi import FastAPI, HTTPException, Query, Request
+from fastapi.responses import JSONResponse
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
 from scipy.stats import binned_statistic_2d
 from sklearn.metrics.pairwise import cosine_similarity
 from sklearn.preprocessing import StandardScaler
 
-from . import data, live
+from . import data, leagues, live
 
 # Minimum games played to include a row in the pool used to compute radar
 # percentile ranks. Keeps low-sample bench players from polluting the axes.
@@ -40,7 +41,7 @@ def _gp_filtered_pool(df: pd.DataFrame) -> pd.DataFrame:
     # fall back to the full pool if the filter empties it
     return filt if len(filt) >= 30 else df
 
-app = FastAPI(title="NBA Data Dashboard API")
+app = FastAPI(title="Hoops Data Dashboard API")
 
 app.add_middleware(
     CORSMiddleware,
@@ -48,6 +49,13 @@ app.add_middleware(
     allow_methods=["*"],
     allow_headers=["*"],
 )
+
+
+@app.exception_handler(FileNotFoundError)
+def _missing_data(request: Request, exc: FileNotFoundError):
+    """A league with no Parquet on disk is a expected, actionable state --
+    report it as 404 with the ETL command rather than a 500."""
+    return JSONResponse(status_code=404, content={"detail": str(exc)})
 
 
 def _json_safe(obj: Any) -> Any:
@@ -74,14 +82,30 @@ def health():
     return {"ok": True}
 
 
-@app.get("/api/meta")
-def meta():
+@app.get("/api/leagues")
+def league_list():
+    """Which leagues exist and which actually have Parquet data on disk."""
     return {
-        "players": data.player_names(),
-        "teams": data.team_names(),
-        "seasons": data.seasons(),
-        "metrics": data.available_metrics(),
+        "leagues": [
+            {"key": lg.key, "label": lg.label, "available": data.has_data(lg)}
+            for lg in leagues.LEAGUES.values()
+        ],
+        "default": leagues.DEFAULT.key,
+    }
+
+
+@app.get("/api/meta")
+def meta(league: str | None = None):
+    lg = leagues.get(league)
+    return {
+        "league": lg.key,
+        "league_label": lg.label,
+        "players": data.player_names(lg),
+        "teams": data.team_names(lg),
+        "seasons": data.seasons(lg),
+        "metrics": data.available_metrics(lg),
         "invert_metrics": sorted(data.INVERT_METRICS),
+        "court": {"arc": lg.three_point_arc, "corner": lg.three_point_corner},
     }
 
 
@@ -91,14 +115,16 @@ def compare(
     metrics: str = Query(..., description="comma-separated metric keys"),
     seasonLo: str | None = None,
     seasonHi: str | None = None,
+    league: str | None = None,
 ):
+    lg = leagues.get(league)
     names = [p for p in players.split(",") if p]
-    mets = [m for m in metrics.split(",") if m and m in data.available_metrics()]
+    mets = [m for m in metrics.split(",") if m and m in data.available_metrics(lg)]
     if not names or not mets:
         return {"rows": [], "single_season": False, "season_label": None}
-    df = data.players()
+    df = data.players(lg)
     df = df[df["player_name"].isin(names)]
-    allowed = data.allowed_seasons(seasonLo, seasonHi)
+    allowed = data.allowed_seasons(seasonLo, seasonHi, lg)
     if allowed:
         df = df[df["season"].isin(allowed)]
     if df.empty:
@@ -120,8 +146,9 @@ def compare(
     # instead of everyone landing in the same mid-range band.
     if single:
         season = out["season_label"]
-        pool_cols = list(set(mets + ["gp", "player_name"]) & set(data.players().columns))
-        raw_pool = data.players()[data.players()["season"] == season][pool_cols]
+        all_players = data.players(lg)
+        pool_cols = list(set(mets + ["gp", "player_name"]) & set(all_players.columns))
+        raw_pool = all_players[all_players["season"] == season][pool_cols]
         pool = _gp_filtered_pool(data.clean_numeric(raw_pool, mets))
         pct = _percentile_map(pool, mets)
         norm = {}
@@ -141,30 +168,33 @@ def compare(
 def trends(
     player: str,
     metrics: str,
-    league: bool = True,
+    leagueAvg: bool = True,
+    league: str | None = None,
 ):
-    mets = [m for m in metrics.split(",") if m and m in data.available_metrics()]
+    lg = leagues.get(league)
+    mets = [m for m in metrics.split(",") if m and m in data.available_metrics(lg)]
     if not mets:
         return {"player": player, "metrics": [], "series": []}
-    df = data.players()
+    df = data.players(lg)
     pdf = data.clean_numeric(df[df["player_name"] == player], mets)
     pdf = pdf[["season"] + mets].sort_values("season")
     series = []
     for _, row in pdf.iterrows():
         for m in mets:
             series.append({"season": row["season"], "metric": m, "value": row[m], "source": player})
-    if league:
-        lg = data.clean_numeric(df, mets).groupby("season")[mets].mean(numeric_only=True).reset_index()
-        for _, row in lg.iterrows():
+    if leagueAvg:
+        avg = data.clean_numeric(df, mets).groupby("season")[mets].mean(numeric_only=True).reset_index()
+        for _, row in avg.iterrows():
             for m in mets:
                 series.append({"season": row["season"], "metric": m, "value": row[m], "source": "League avg"})
     return _json_safe({"player": player, "metrics": mets, "series": series})
 
 
 @app.get("/api/percentiles")
-def percentiles(player: str, season: str):
-    df = data.players()
-    mets = data.available_metrics()
+def percentiles(player: str, season: str, league: str | None = None):
+    lg = leagues.get(league)
+    df = data.players(lg)
+    mets = data.available_metrics(lg)
     pool = df[df["season"] == season].copy()
     sub = pool[pool["player_name"] == player]
     if sub.empty:
@@ -192,17 +222,19 @@ class SimilarRequest(BaseModel):
     weights: dict[str, float] = {}
     seasonLo: str | None = None
     seasonHi: str | None = None
+    league: str | None = None
 
 
 @app.post("/api/similar")
 def similar(req: SimilarRequest):
+    lg = leagues.get(req.league)
     desired = ["pts", "ast", "reb", "tov", "ts_pct", "usg_pct", "ortg", "drtg"]
-    cols = data.players().columns
+    cols = data.players(lg).columns
     feats = [f for f in desired if f in cols]
     if not feats:
         raise HTTPException(400, "No similarity features available")
-    df = data.players().copy()
-    allowed = data.allowed_seasons(req.seasonLo, req.seasonHi)
+    df = data.players(lg).copy()
+    allowed = data.allowed_seasons(req.seasonLo, req.seasonHi, lg)
     if allowed:
         df = df[df["season"].isin(allowed)]
     agg_cols = feats + (["gp"] if "gp" in df.columns else [])
@@ -263,14 +295,22 @@ def gamelog(
     season: str,
     stat: str = "PTS",
     window: int = 10,
+    league: str | None = None,
 ):
-    pid = live.find_player_id(player)
-    if not pid:
-        raise HTTPException(404, f"Player '{player}' not found")
-    try:
-        glog = live.fetch_gamelog(pid, season)
-    except Exception as e:
-        raise HTTPException(502, live.friendly_upstream_message(e)) from e
+    lg = leagues.get(league)
+    local = data.gamelog(lg)
+    if local is not None:
+        glog = local[(local["player_name"] == player) & (local["season"] == str(season))].copy()
+        if glog.empty and player not in set(local["player_name"]):
+            raise HTTPException(404, f"No {lg.label} game log for '{player}'")
+    else:
+        pid = live.find_player_id(player, lg)
+        if not pid:
+            raise HTTPException(404, f"Player '{player}' not found in the {lg.label}")
+        try:
+            glog = live.fetch_gamelog(pid, season, lg)
+        except Exception as e:
+            raise HTTPException(502, live.friendly_upstream_message(e, lg)) from e
     if glog.empty or stat not in glog.columns:
         return {"player": player, "season": season, "stat": stat, "window": window, "games": []}
     g = glog.copy()
@@ -301,21 +341,24 @@ def gamelog(
 class AgeRequest(BaseModel):
     players: list[str]
     metric: str
+    league: str | None = None
 
 
 @app.post("/api/age-curves")
 def age_curves(req: AgeRequest):
-    if req.metric not in data.available_metrics():
+    lg = leagues.get(req.league)
+    if req.metric not in data.available_metrics(lg):
         raise HTTPException(400, "metric unavailable")
+    local_bd = data.birthdates(lg)
     curves = []
     for pname in req.players[:5]:
-        sub = data.players()
+        sub = data.players(lg)
         sub = sub[sub["player_name"] == pname].copy()
         if sub.empty:
             curves.append({"player": pname, "points": [], "error": "not found"})
             continue
         pid = int(sub["player_id"].iloc[0])
-        bd = live.fetch_birthdate(pid)
+        bd = local_bd.get(pid) if local_bd else live.fetch_birthdate(pid, lg)
         if bd is None or pd.isna(bd):
             curves.append({"player": pname, "points": [], "error": "no birthdate"})
             continue
@@ -324,7 +367,8 @@ def age_curves(req: AgeRequest):
             s = str(r["season"])
             try:
                 y = int(s.split("-")[0])
-                age = round((pd.Timestamp(year=y, month=10, day=1) - bd).days / 365.25, 2)
+                start = pd.Timestamp(year=y, month=lg.season_start_month, day=1)
+                age = round((start - bd).days / 365.25, 2)
             except Exception:
                 continue
             v = pd.to_numeric(r.get(req.metric), errors="coerce")
@@ -351,8 +395,8 @@ def _four_factors(row: pd.Series) -> dict:
 
 
 @app.get("/api/teams/series")
-def team_series(team: str):
-    tdf = data.teams().copy()
+def team_series(team: str, league: str | None = None):
+    tdf = data.teams(leagues.get(league)).copy()
     tdf = tdf[tdf["team_name"] == team]
     if tdf.empty:
         raise HTTPException(404, "team not found")
@@ -370,8 +414,8 @@ def team_series(team: str):
 
 
 @app.get("/api/teams/factors")
-def team_factors(team: str, season: str):
-    tdf = data.teams().copy()
+def team_factors(team: str, season: str, league: str | None = None):
+    tdf = data.teams(leagues.get(league)).copy()
     needed = {"FGM", "FGA", "FG3M", "FTA", "TOV", "OREB", "DREB"}
     if not needed.issubset(set(tdf.columns)):
         raise HTTPException(400, f"Missing columns: {sorted(needed - set(tdf.columns))}")
@@ -391,14 +435,22 @@ def shots(
     player: str,
     season: str,
     mode: str = Query("scatter", pattern="^(scatter|hex)$"),
+    league: str | None = None,
 ):
-    pid = live.find_player_id(player)
-    if not pid:
-        raise HTTPException(404, f"Player '{player}' not found")
-    try:
-        sdf = live.fetch_shots(pid, season)
-    except Exception as e:
-        raise HTTPException(502, live.friendly_upstream_message(e)) from e
+    lg = leagues.get(league)
+    local = data.shots(lg)
+    if local is not None:
+        sdf = local[(local["player_name"] == player) & (local["season"] == str(season))]
+        if sdf.empty and player not in set(local["player_name"]):
+            raise HTTPException(404, f"No {lg.label} shot data for '{player}'")
+    else:
+        pid = live.find_player_id(player, lg)
+        if not pid:
+            raise HTTPException(404, f"Player '{player}' not found in the {lg.label}")
+        try:
+            sdf = live.fetch_shots(pid, season, lg)
+        except Exception as e:
+            raise HTTPException(502, live.friendly_upstream_message(e, lg)) from e
     if sdf.empty:
         return {"player": player, "season": season, "mode": mode, "shots": [], "hexes": []}
     if mode == "scatter":
@@ -445,5 +497,5 @@ def shots(
 
 
 @app.get("/api/player-search")
-def player_search(q: str = "", limit: int = 12):
-    return {"results": live.search_players(q, limit=limit)}
+def player_search(q: str = "", limit: int = 12, league: str | None = None):
+    return {"results": live.search_players(q, limit=limit, league=leagues.get(league))}

@@ -13,10 +13,10 @@ export function Percentiles({ meta }: { meta: Meta }) {
   useEffect(() => {
     if (!player || !season) return;
     api
-      .percentiles(player, season)
+      .percentiles(player, season, meta.league)
       .then(setData)
       .catch(() => setData(null));
-  }, [player, season]);
+  }, [player, season, meta.league]);
 
   const { traces, layout } = useMemo(() => {
     if (!data?.rows?.length) return { traces: [], layout: {} };

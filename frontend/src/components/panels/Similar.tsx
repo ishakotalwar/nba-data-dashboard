@@ -25,6 +25,7 @@ export function Similar({ meta }: { meta: Meta }) {
         weights,
         seasonLo: meta.seasons[0],
         seasonHi: meta.seasons[meta.seasons.length - 1],
+        league: meta.league,
       })
       .then((d) => {
         setData(d);

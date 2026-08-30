@@ -20,7 +20,7 @@ export function AgeCurves({ meta }: { meta: Meta }) {
     setLoading(true);
     setErr(null);
     try {
-      const d = await api.ageCurves({ players, metric });
+      const d = await api.ageCurves({ players, metric, league: meta.league });
       setData(d);
     } catch (e: any) {
       setErr(e.message);

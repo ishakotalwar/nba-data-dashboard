@@ -1,4 +1,6 @@
+import argparse
 import os
+import sys
 import time
 from dataclasses import dataclass
 from typing import Optional, Dict, List
@@ -15,15 +17,18 @@ from nba_api.stats.endpoints import (
 )
 
 
-ROOT = os.path.dirname(os.path.dirname(__file__))
+ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 DATA_DIR = os.path.join(ROOT, "data")
 os.makedirs(DATA_DIR, exist_ok=True)
+sys.path.insert(0, ROOT)
 
-SEASON = "2024-25"
-DEMO_PLAYER = "Stephen Curry"
+from backend.leagues import LEAGUES, League  # noqa: E402  (needs ROOT on sys.path)
 
 REQUEST_PAUSE = 0.8  # avoid too many requests to API too quickly
-LEAGUE_ID = "00"     # NBA (00=NBA, 10=WNBA, 20=G League)
+
+# Sensible per-league defaults for the one-player shot-chart sample.
+DEFAULT_SEASON_YEAR = 2024
+DEMO_PLAYERS = {"nba": "Stephen Curry", "wnba": "A'ja Wilson"}
 
 
 
@@ -51,54 +56,60 @@ class PlayerIdentity:
     full_name: str
 
 
-def find_player(name: str) -> Optional[PlayerIdentity]:
-    hits = players_static.find_players_by_full_name(name)
+def find_player(name: str, league: League) -> Optional[PlayerIdentity]:
+    if league.key == "nba":
+        hits = players_static.find_players_by_full_name(name)
+    else:
+        finder = getattr(players_static, f"find_{league.key}_players_by_full_name", None)
+        hits = finder(name) if finder else None
     if not hits:
         return None
     return PlayerIdentity(id=hits[0]["id"], full_name=hits[0]["full_name"])
 
 
-def fetch_teams_master() -> pd.DataFrame:
-    return pd.DataFrame(teams_static.get_teams())
+def fetch_teams_master(league: League) -> pd.DataFrame:
+    if league.key == "nba":
+        return pd.DataFrame(teams_static.get_teams())
+    getter = getattr(teams_static, f"get_{league.key}_teams", None)
+    if getter is None:
+        raise SystemExit(f"nba_api has no static team list for the {league.label}")
+    return pd.DataFrame(getter())
 
 
-def fetch_team_year_by_year(team_id: int) -> pd.DataFrame:
-    try:
-        ep = teamyearbyyearstats.TeamYearByYearStats(
-            team_id=team_id,
-            league_id_nullable=LEAGUE_ID,
-        )
-    except TypeError:
-        ep = teamyearbyyearstats.TeamYearByYearStats(team_id=team_id)
+def fetch_team_year_by_year(team_id: int, league: League) -> pd.DataFrame:
+    ep = teamyearbyyearstats.TeamYearByYearStats(
+        team_id=team_id,
+        league_id_nullable=league.league_id,
+    )
     return _first_df(ep)
 
 
-def _league_dash_player_stats_safe(season: str, per_mode: str, measure_type: str):
+def _league_dash_player_stats_safe(season: str, per_mode: str, measure_type: str, league: League):
     try:
         return leaguedashplayerstats.LeagueDashPlayerStats(
             season=season,
             per_mode_detailed=per_mode,
             measure_type_detailed_defense=measure_type,
-            league_id_nullable=LEAGUE_ID,
+            league_id_nullable=league.league_id,
         )
     except TypeError:
         return leaguedashplayerstats.LeagueDashPlayerStats(
             season=season,
             per_mode_detailed=per_mode,
             measure_type_detailed_def=measure_type,
-            league_id_nullable=LEAGUE_ID,
+            league_id_nullable=league.league_id,
         )
 
 
-def fetch_players_base_adv(season: str) -> pd.DataFrame:
+def fetch_players_base_adv(season: str, league: League) -> pd.DataFrame:
     """
     League-wide player stats for a season:
     - Base: PTS, AST, REB, FG%, etc.
     - Advanced: TS%, USG%, ORtg, DRtg, Pace
     """
-    base = _first_df(_league_dash_player_stats_safe(season=season, per_mode="PerGame", measure_type="Base"))
+    base = _first_df(_league_dash_player_stats_safe(season, "PerGame", "Base", league))
     time.sleep(REQUEST_PAUSE)
-    adv  = _first_df(_league_dash_player_stats_safe(season=season, per_mode="PerGame", measure_type="Advanced"))
+    adv  = _first_df(_league_dash_player_stats_safe(season, "PerGame", "Advanced", league))
 
     keep_base = [
         "PLAYER_ID", "PLAYER_NAME", "TEAM_ID", "TEAM_ABBREVIATION",
@@ -153,22 +164,16 @@ def fetch_players_base_adv(season: str) -> pd.DataFrame:
     return merged
 
 
-def fetch_player_shots(player_id: int, season: str) -> pd.DataFrame:
-    try:
-        ep = shotchartdetail.ShotChartDetail(
-            team_id=0, 
-            player_id=player_id,
-            season_nullable=season,
-            context_measure_simple="FGA",
-            league_id_nullable=LEAGUE_ID,
-        )
-    except TypeError:
-        ep = shotchartdetail.ShotChartDetail(
-            team_id=0,
-            player_id=player_id,
-            season_nullable=season,
-            context_measure_simple="FGA",
-        )
+def fetch_player_shots(player_id: int, season: str, league: League) -> pd.DataFrame:
+    # ShotChartDetail takes `league_id`, not `league_id_nullable`; using the
+    # nullable name raises TypeError and silently yields NBA data.
+    ep = shotchartdetail.ShotChartDetail(
+        team_id=0,
+        player_id=player_id,
+        season_nullable=season,
+        context_measure_simple="FGA",
+        league_id=league.league_id,
+    )
     raw = _first_df(ep)
 
     rename_map = {
@@ -201,14 +206,43 @@ def fetch_player_shots(player_id: int, season: str) -> pd.DataFrame:
 
     return shots
 
-def main():
-    teams_master = fetch_teams_master()
-    teams_master.to_parquet(os.path.join(DATA_DIR, "teams_master.parquet"), index=False)
+def out_path(stem: str, league: League) -> str:
+    return os.path.join(DATA_DIR, f"{stem}{league.suffix}.parquet")
+
+
+def parse_args(argv=None):
+    ap = argparse.ArgumentParser(
+        description="Populate data/*.parquet for a league from stats.nba.com."
+    )
+    ap.add_argument("--league", default="nba", choices=sorted(LEAGUES),
+                    help="which league to pull (default: nba)")
+    ap.add_argument("--season", default=None,
+                    help="season string; defaults to the league's 2024 season "
+                         "(NBA 2024-25, WNBA 2024)")
+    ap.add_argument("--demo-player", default=None,
+                    help="player used for the sample shot chart")
+    ap.add_argument("--skip-shots", action="store_true",
+                    help="skip the shot-chart pull (the slowest, flakiest step)")
+    return ap.parse_args(argv)
+
+
+def main(argv=None):
+    args = parse_args(argv)
+    league = LEAGUES[args.league]
+    season = args.season or league.season(DEFAULT_SEASON_YEAR)
+    demo_player = args.demo_player or DEMO_PLAYERS.get(league.key)
+
+    print(f"[{league.label}] season={season} league_id={league.league_id}")
+
+    teams_master = fetch_teams_master(league)
+    teams_master.to_parquet(out_path("teams_master", league), index=False)
+    print(f"[{league.label}] teams_master: {len(teams_master)} teams")
     time.sleep(REQUEST_PAUSE)
+
     all_yby: List[pd.DataFrame] = []
     for _, t in teams_master.iterrows():
         try:
-            yby = fetch_team_year_by_year(team_id=t["id"])
+            yby = fetch_team_year_by_year(team_id=t["id"], league=league)
             yby["TEAM_ID"] = t["id"]
             yby["TEAM_NAME"] = t["full_name"]
             all_yby.append(yby)
@@ -229,18 +263,26 @@ def main():
             "WINS": "wins",
             "LOSSES": "losses",
         })
-        teams.to_parquet(os.path.join(DATA_DIR, "teams.parquet"), index=False)
+        teams.to_parquet(out_path("teams", league), index=False)
+        print(f"[{league.label}] teams: {len(teams)} team-seasons")
     else:
         print("warning: no team y/y data assembled")
-    players = fetch_players_base_adv(SEASON)
-    players.to_parquet(os.path.join(DATA_DIR, "players.parquet"), index=False)
+
+    players = fetch_players_base_adv(season, league)
+    players.to_parquet(out_path("players", league), index=False)
+    print(f"[{league.label}] players: {len(players)} rows for {season}")
     time.sleep(REQUEST_PAUSE)
 
-    match = find_player(DEMO_PLAYER)
+    if args.skip_shots:
+        print(f"[{league.label}] skipping shots")
+        return
+
+    match = find_player(demo_player, league)
     if not match:
-        raise SystemExit(f"Could not find player: {DEMO_PLAYER}")
-    shots = fetch_player_shots(player_id=match.id, season=SEASON)
-    shots.to_parquet(os.path.join(DATA_DIR, "shots.parquet"), index=False)
+        raise SystemExit(f"Could not find {league.label} player: {demo_player}")
+    shots = fetch_player_shots(match.id, season, league)
+    shots.to_parquet(out_path("shots", league), index=False)
+    print(f"[{league.label}] shots: {len(shots)} attempts for {match.full_name}")
 
 
 if __name__ == "__main__":

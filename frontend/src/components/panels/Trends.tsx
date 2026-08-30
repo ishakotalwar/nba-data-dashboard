@@ -10,13 +10,15 @@ export function Trends({ meta }: { meta: Meta }) {
   const [metrics, setMetrics] = useState<string[]>(
     ["pts", "ast", "reb", "ts_pct"].filter((m) => meta.metrics.includes(m))
   );
-  const [league, setLeague] = useState(true);
+  const [leagueAvg, setLeagueAvg] = useState(true);
   const [data, setData] = useState<any>(null);
 
   useEffect(() => {
     if (!player || metrics.length === 0) return;
-    api.trends({ player, metrics, league }).then(setData).catch(() => setData(null));
-  }, [player, metrics, league]);
+    api.trends({ player, metrics, leagueAvg, league: meta.league })
+      .then(setData)
+      .catch(() => setData(null));
+  }, [player, metrics, leagueAvg, meta.league]);
 
   const { traces, layout } = useMemo(() => {
     if (!data) return { traces: [], layout: {} };
@@ -29,7 +31,7 @@ export function Trends({ meta }: { meta: Meta }) {
     const traces: any[] = [];
     data.metrics.forEach((m: string, i: number) => {
       ["player", "League avg"].forEach((src) => {
-        if (src === "League avg" && !league) return;
+        if (src === "League avg" && !leagueAvg) return;
         const rows = data.series.filter((r: any) => r.metric === m && (src === "player" ? r.source === data.player : r.source === "League avg"));
         if (!rows.length) return;
         traces.push({
@@ -50,7 +52,7 @@ export function Trends({ meta }: { meta: Meta }) {
       layout[`xaxis${i + 1}`] = { gridcolor: "#1f2630" };
     });
     return { traces, layout };
-  }, [data, league]);
+  }, [data, leagueAvg]);
 
   return (
     <div className="space-y-4">
@@ -66,7 +68,7 @@ export function Trends({ meta }: { meta: Meta }) {
             <MultiSelect options={meta.metrics} value={metrics} onChange={setMetrics} />
           </div>
           <label className="flex items-center gap-2 text-sm text-mute md:col-span-3">
-            <input type="checkbox" checked={league} onChange={(e) => setLeague(e.target.checked)} />
+            <input type="checkbox" checked={leagueAvg} onChange={(e) => setLeagueAvg(e.target.checked)} />
             Overlay league average
           </label>
         </CardBody>

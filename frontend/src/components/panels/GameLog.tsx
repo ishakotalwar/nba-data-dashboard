@@ -22,7 +22,7 @@ export function GameLog({ meta }: { meta: Meta }) {
     setLoading(true);
     setErr(null);
     try {
-      const d = await api.gamelog(player, season, stat, window);
+      const d = await api.gamelog(player, season, stat, window, meta.league);
       setData(d);
     } catch (e: any) {
       setErr(e.message);
@@ -61,7 +61,7 @@ export function GameLog({ meta }: { meta: Meta }) {
       <Card>
         <CardHeader
           title="Game log explorer"
-          subtitle="Per-game line with a rolling average — fetched live from stats.nba.com and cached"
+          subtitle="Per-game line with a rolling average"
         />
         <CardBody className="space-y-4">
           <div className="grid gap-3 md:grid-cols-4">

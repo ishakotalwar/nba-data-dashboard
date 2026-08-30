@@ -12,44 +12,72 @@ async function j<T>(r: Response): Promise<T> {
   return r.json() as Promise<T>;
 }
 
+export type LeagueKey = string;
+
+export type LeagueInfo = {
+  key: LeagueKey;
+  label: string;
+  available: boolean;
+};
+
 export type Meta = {
+  league: LeagueKey;
+  league_label: string;
   players: string[];
   teams: string[];
   seasons: string[];
   metrics: string[];
   invert_metrics: string[];
+  // Three-point geometry for this league, in tenths of a foot from the hoop.
+  court: { arc: number; corner: number };
 };
 
+/** Query string with `league` appended, so every request is league-scoped. */
+function q(league: LeagueKey, extra: Record<string, string> = {}) {
+  return new URLSearchParams({ ...extra, league });
+}
+
 export const api = {
-  meta: () => fetch(`${BASE}/meta`).then((r) => j<Meta>(r)),
+  leagues: () =>
+    fetch(`${BASE}/leagues`).then((r) =>
+      j<{ leagues: LeagueInfo[]; default: LeagueKey }>(r)
+    ),
+
+  meta: (league: LeagueKey) =>
+    fetch(`${BASE}/meta?${q(league)}`).then((r) => j<Meta>(r)),
 
   compare: (params: {
     players: string[];
     metrics: string[];
     seasonLo?: string;
     seasonHi?: string;
+    league: LeagueKey;
   }) => {
-    const q = new URLSearchParams({
+    const p = q(params.league, {
       players: params.players.join(","),
       metrics: params.metrics.join(","),
     });
-    if (params.seasonLo) q.set("seasonLo", params.seasonLo);
-    if (params.seasonHi) q.set("seasonHi", params.seasonHi);
-    return fetch(`${BASE}/compare?${q}`).then((r) => j<any>(r));
+    if (params.seasonLo) p.set("seasonLo", params.seasonLo);
+    if (params.seasonHi) p.set("seasonHi", params.seasonHi);
+    return fetch(`${BASE}/compare?${p}`).then((r) => j<any>(r));
   },
 
-  trends: (params: { player: string; metrics: string[]; league?: boolean }) => {
-    const q = new URLSearchParams({
-      player: params.player,
-      metrics: params.metrics.join(","),
-      league: String(params.league ?? true),
-    });
-    return fetch(`${BASE}/trends?${q}`).then((r) => j<any>(r));
-  },
+  trends: (params: {
+    player: string;
+    metrics: string[];
+    leagueAvg?: boolean;
+    league: LeagueKey;
+  }) =>
+    fetch(
+      `${BASE}/trends?${q(params.league, {
+        player: params.player,
+        metrics: params.metrics.join(","),
+        leagueAvg: String(params.leagueAvg ?? true),
+      })}`
+    ).then((r) => j<any>(r)),
 
-  percentiles: (player: string, season: string) =>
-    fetch(`${BASE}/percentiles?player=${encodeURIComponent(player)}&season=${encodeURIComponent(season)}`)
-      .then((r) => j<any>(r)),
+  percentiles: (player: string, season: string, league: LeagueKey) =>
+    fetch(`${BASE}/percentiles?${q(league, { player, season })}`).then((r) => j<any>(r)),
 
   similar: (body: {
     anchor: string;
@@ -57,6 +85,7 @@ export const api = {
     weights: Record<string, number>;
     seasonLo?: string;
     seasonHi?: string;
+    league: LeagueKey;
   }) =>
     fetch(`${BASE}/similar`, {
       method: "POST",
@@ -64,32 +93,35 @@ export const api = {
       body: JSON.stringify(body),
     }).then((r) => j<any>(r)),
 
-  gamelog: (player: string, season: string, stat: string, window: number) =>
+  gamelog: (
+    player: string,
+    season: string,
+    stat: string,
+    window: number,
+    league: LeagueKey
+  ) =>
     fetch(
-      `${BASE}/gamelog?player=${encodeURIComponent(player)}&season=${encodeURIComponent(
-        season
-      )}&stat=${stat}&window=${window}`
+      `${BASE}/gamelog?${q(league, {
+        player,
+        season,
+        stat,
+        window: String(window),
+      })}`
     ).then((r) => j<any>(r)),
 
-  ageCurves: (body: { players: string[]; metric: string }) =>
+  ageCurves: (body: { players: string[]; metric: string; league: LeagueKey }) =>
     fetch(`${BASE}/age-curves`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify(body),
     }).then((r) => j<any>(r)),
 
-  teamSeries: (team: string) =>
-    fetch(`${BASE}/teams/series?team=${encodeURIComponent(team)}`).then((r) => j<any>(r)),
+  teamSeries: (team: string, league: LeagueKey) =>
+    fetch(`${BASE}/teams/series?${q(league, { team })}`).then((r) => j<any>(r)),
 
-  teamFactors: (team: string, season: string) =>
-    fetch(
-      `${BASE}/teams/factors?team=${encodeURIComponent(team)}&season=${encodeURIComponent(season)}`
-    ).then((r) => j<any>(r)),
+  teamFactors: (team: string, season: string, league: LeagueKey) =>
+    fetch(`${BASE}/teams/factors?${q(league, { team, season })}`).then((r) => j<any>(r)),
 
-  shots: (player: string, season: string, mode: "scatter" | "hex") =>
-    fetch(
-      `${BASE}/shots?player=${encodeURIComponent(player)}&season=${encodeURIComponent(
-        season
-      )}&mode=${mode}`
-    ).then((r) => j<any>(r)),
+  shots: (player: string, season: string, mode: "scatter" | "hex", league: LeagueKey) =>
+    fetch(`${BASE}/shots?${q(league, { player, season, mode })}`).then((r) => j<any>(r)),
 };

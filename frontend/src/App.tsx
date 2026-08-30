@@ -1,6 +1,6 @@
 import { useEffect, useState } from "react";
 import * as Tabs from "@radix-ui/react-tabs";
-import { api, type Meta } from "./lib/api";
+import { api, type LeagueInfo, type LeagueKey, type Meta } from "./lib/api";
 import { cn } from "./lib/cn";
 import { Compare } from "./components/panels/Compare";
 import { Trends } from "./components/panels/Trends";
@@ -23,15 +23,33 @@ const TABS = [
 ] as const;
 
 export default function App() {
+  const [leagues, setLeagues] = useState<LeagueInfo[] | null>(null);
+  const [league, setLeague] = useState<LeagueKey | null>(null);
   const [meta, setMeta] = useState<Meta | null>(null);
   const [err, setErr] = useState<string | null>(null);
 
+  // Which leagues exist, and which one to open on.
   useEffect(() => {
-    api.meta().then(setMeta).catch((e) => setErr(e.message));
+    api
+      .leagues()
+      .then(({ leagues, default: dflt }) => {
+        setLeagues(leagues);
+        const first = leagues.find((l) => l.available)?.key ?? dflt;
+        setLeague(first);
+      })
+      .catch((e) => setErr(e.message));
   }, []);
 
-  if (err) return <Bootstrap state="error" msg={err} />;
-  if (!meta) return <Bootstrap state="loading" />;
+  // Reload metadata whenever the league changes.
+  useEffect(() => {
+    if (!league) return;
+    setMeta(null);
+    setErr(null);
+    api.meta(league).then(setMeta).catch((e) => setErr(e.message));
+  }, [league]);
+
+  if (err) return <Bootstrap state="error" msg={err} leagues={leagues} league={league} onLeague={setLeague} />;
+  if (!meta || !league) return <Bootstrap state="loading" />;
 
   return (
     <div className="min-h-screen bg-bg">
@@ -40,20 +58,24 @@ export default function App() {
           <div className="flex items-center gap-3">
             <div className="grid h-8 w-8 place-items-center rounded-lg bg-accent text-black font-bold">🏀</div>
             <div>
-              <div className="text-[15px] font-semibold leading-tight">NBA Data Dashboard</div>
+              <div className="text-[15px] font-semibold leading-tight">Hoops Data Dashboard</div>
               <div className="text-xs text-mute">
-                {meta.players.length} players · {meta.seasons.length} season{meta.seasons.length === 1 ? "" : "s"}
+                {meta.league_label} · {meta.players.length} players ·{" "}
+                {meta.seasons.length} season{meta.seasons.length === 1 ? "" : "s"}
               </div>
             </div>
           </div>
-          <div className="flex items-center gap-2 text-xs text-mute">
-            <span className="chip">live via stats.nba.com</span>
+          <div className="flex items-center gap-3 text-xs text-mute">
+            <LeagueToggle leagues={leagues} active={league} onChange={setLeague} />
+            <span className="chip">{meta.seasons.length} seasons · local parquet</span>
           </div>
         </div>
       </header>
 
       <main className="mx-auto max-w-7xl px-6 py-6">
-        <Tabs.Root defaultValue="compare">
+        {/* Keying on league remounts every panel, clearing player/team picks
+            that don't exist in the league being switched to. */}
+        <Tabs.Root defaultValue="compare" key={league}>
           <Tabs.List className="no-scrollbar mb-5 flex gap-1 overflow-x-auto rounded-xl border border-border bg-panel p-1">
             {TABS.map((t) => (
               <Tabs.Trigger
@@ -84,7 +106,53 @@ export default function App() {
   );
 }
 
-function Bootstrap({ state, msg }: { state: "loading" | "error"; msg?: string }) {
+function LeagueToggle({
+  leagues,
+  active,
+  onChange,
+}: {
+  leagues: LeagueInfo[] | null;
+  active: LeagueKey;
+  onChange: (k: LeagueKey) => void;
+}) {
+  if (!leagues || leagues.length < 2) return null;
+  return (
+    <div className="flex items-center gap-0.5 rounded-lg border border-border bg-panel p-0.5">
+      {leagues.map((l) => (
+        <button
+          key={l.key}
+          onClick={() => onChange(l.key)}
+          disabled={!l.available && l.key !== active}
+          title={l.available ? `Show ${l.label} data` : `No ${l.label} data yet — run the ETL for this league`}
+          className={cn(
+            "rounded-md px-2.5 py-1 text-xs font-medium transition",
+            l.key === active
+              ? "bg-accent text-black shadow"
+              : l.available
+              ? "text-mute hover:text-ink"
+              : "cursor-not-allowed text-mute/40"
+          )}
+        >
+          {l.label}
+        </button>
+      ))}
+    </div>
+  );
+}
+
+function Bootstrap({
+  state,
+  msg,
+  leagues,
+  league,
+  onLeague,
+}: {
+  state: "loading" | "error";
+  msg?: string;
+  leagues?: LeagueInfo[] | null;
+  league?: LeagueKey | null;
+  onLeague?: (k: LeagueKey) => void;
+}) {
   return (
     <div className="grid min-h-screen place-items-center bg-bg text-ink">
       <div className="card max-w-md p-6 text-center">
@@ -95,11 +163,17 @@ function Bootstrap({ state, msg }: { state: "loading" | "error"; msg?: string })
           </>
         ) : (
           <>
-            <div className="mb-2 text-lg font-semibold text-bad">Failed to reach backend</div>
+            <div className="mb-2 text-lg font-semibold text-bad">Couldn't load data</div>
             <div className="text-sm text-mute">{msg}</div>
             <div className="mt-4 text-xs text-mute">
-              Start the API with: <code className="rounded bg-border/60 px-1.5 py-0.5">uvicorn backend.main:app --reload</code>
+              If the API isn't running, start it with:{" "}
+              <code className="rounded bg-border/60 px-1.5 py-0.5">uvicorn backend.main:app --reload</code>
             </div>
+            {leagues && league && onLeague && (
+              <div className="mt-4 flex justify-center">
+                <LeagueToggle leagues={leagues} active={league} onChange={onLeague} />
+              </div>
+            )}
           </>
         )}
       </div>

@@ -26,11 +26,12 @@ export function Compare({ meta }: { meta: Meta }) {
         metrics,
         seasonLo: meta.seasons[0],
         seasonHi: meta.seasons[meta.seasons.length - 1],
+        league: meta.league,
       })
       .then(setData)
       .catch(() => setData(null))
       .finally(() => setLoading(false));
-  }, [players, metrics, meta.seasons]);
+  }, [players, metrics, meta.seasons, meta.league]);
 
   const traces = useMemo(() => {
     if (!data?.rows?.length) return [];

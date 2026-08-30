@@ -12,7 +12,7 @@ export function Teams({ meta }: { meta: Meta }) {
 
   useEffect(() => {
     if (!team) return;
-    api.teamSeries(team).then((d) => {
+    api.teamSeries(team, meta.league).then((d) => {
       setSeries(d);
       const last = d.rows.at(-1)?.season ?? "";
       setSeason(last);
@@ -21,7 +21,7 @@ export function Teams({ meta }: { meta: Meta }) {
 
   useEffect(() => {
     if (!team || !season) return;
-    api.teamFactors(team, season).then(setFactors).catch(() => setFactors(null));
+    api.teamFactors(team, season, meta.league).then(setFactors).catch(() => setFactors(null));
   }, [team, season]);
 
   const winsTrace = useMemo(() => {
