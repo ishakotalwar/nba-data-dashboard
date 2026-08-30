@@ -7,9 +7,11 @@ import { Plot } from "@/components/ui/Plot";
 import { ErrorNotice } from "@/components/ui/ErrorNotice";
 import { buildCourtShapes, courtAxis } from "@/lib/court";
 import { cn } from "@/lib/cn";
+import { playerAvatar } from "@/components/ui/Avatar";
 
 export function ShotChart({ meta }: { meta: Meta }) {
-  const [player, setPlayer] = useState("Stephen Curry");
+  const avatar = playerAvatar(meta);
+  const [player, setPlayer] = useState("");
   const [season, setSeason] = useState(meta.seasons[meta.seasons.length - 1] ?? "");
   const [mode, setMode] = useState<"scatter" | "hex">("hex");
   const [data, setData] = useState<any>(null);
@@ -100,7 +102,7 @@ export function ShotChart({ meta }: { meta: Meta }) {
           <div className="grid gap-3 md:grid-cols-3">
             <div>
               <div className="label mb-1.5">Player</div>
-              <PlayerCombobox options={meta.players} value={player} onChange={setPlayer} />
+              <PlayerCombobox options={meta.players} value={player} onChange={setPlayer} renderAvatar={avatar} />
             </div>
             <div>
               <div className="label mb-1.5">Season</div>
@@ -122,7 +124,7 @@ export function ShotChart({ meta }: { meta: Meta }) {
             </div>
           </div>
           <div className="flex items-center gap-3">
-            <button className="btn btn-primary" onClick={fetchIt} disabled={loading}>
+            <button className="btn btn-primary" onClick={fetchIt} disabled={loading || !player}>
               {loading ? "Fetching…" : "Fetch shots"}
             </button>
             {data?.count != null && (
@@ -136,7 +138,10 @@ export function ShotChart({ meta }: { meta: Meta }) {
       </Card>
 
       <Card>
-        <CardHeader title={data ? `${data.player} — ${data.season}` : "—"} />
+        <CardHeader
+          lead={data ? avatar(data.player, 44) : undefined}
+          title={data ? `${data.player} — ${data.season}` : "—"}
+        />
         <CardBody>
           {traces.length === 0 ? (
             <div className="grid place-items-center py-10 text-sm text-mute">

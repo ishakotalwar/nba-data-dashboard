@@ -1,6 +1,9 @@
 import { useMemo, useRef, useState } from "react";
 import * as Popover from "@radix-ui/react-popover";
 import { cn } from "@/lib/cn";
+import { VirtualList } from "./VirtualList";
+
+const ROW_H = 42;
 
 type Props = {
   options: string[];
@@ -8,17 +11,26 @@ type Props = {
   onChange: (v: string) => void;
   placeholder?: string;
   className?: string;
+  /** Render a leading avatar for each option. */
+  renderAvatar?: (name: string, size: number) => React.ReactNode;
 };
 
-export function PlayerCombobox({ options, value, onChange, placeholder = "Search player…", className }: Props) {
+export function PlayerCombobox({
+  options,
+  value,
+  onChange,
+  placeholder = "Select",
+  className,
+  renderAvatar,
+}: Props) {
   const [q, setQ] = useState("");
   const [open, setOpen] = useState(false);
   const inputRef = useRef<HTMLInputElement>(null);
 
+  // No cap: the list is windowed, so every match stays reachable by scrolling.
   const filtered = useMemo(() => {
     const qq = q.trim().toLowerCase();
-    if (!qq) return options.slice(0, 50);
-    return options.filter((o) => o.toLowerCase().includes(qq)).slice(0, 50);
+    return qq ? options.filter((o) => o.toLowerCase().includes(qq)) : options;
   }, [options, q]);
 
   return (
@@ -27,11 +39,12 @@ export function PlayerCombobox({ options, value, onChange, placeholder = "Search
         <button
           type="button"
           className={cn(
-            "flex h-[42px] w-full items-center rounded-lg border border-border bg-bg/60 px-3 text-left text-sm",
+            "flex h-[42px] w-full items-center gap-2 rounded-lg border border-border bg-bg/60 px-3 text-left text-sm",
             "hover:border-accent/40 focus:outline-none focus:ring-2 focus:ring-accent/30",
             className
           )}
         >
+          {value && renderAvatar?.(value, 30)}
           <span className={cn("truncate", !value && "text-mute")}>{value || placeholder}</span>
         </button>
       </Popover.Trigger>
@@ -52,9 +65,12 @@ export function PlayerCombobox({ options, value, onChange, placeholder = "Search
             value={q}
             onChange={(e) => setQ(e.target.value)}
           />
-          <div className="max-h-64 overflow-auto">
-            {filtered.length === 0 && <div className="p-2 text-sm text-mute">No matches</div>}
-            {filtered.map((o) => (
+          <VirtualList
+            items={filtered}
+            rowHeight={ROW_H}
+            maxHeight={288}
+            empty={<div className="p-2 text-sm text-mute">No matches</div>}
+            renderRow={(o) => (
               <button
                 key={o}
                 onClick={() => {
@@ -62,15 +78,21 @@ export function PlayerCombobox({ options, value, onChange, placeholder = "Search
                   setOpen(false);
                   setQ("");
                 }}
+                style={{ height: ROW_H }}
                 className={cn(
-                  "flex w-full items-center justify-between rounded-md px-2.5 py-1.5 text-left text-sm",
+                  "flex w-full items-center gap-2 rounded-md px-2 text-left text-sm",
                   value === o ? "bg-accent/15 text-ink" : "hover:bg-border/60"
                 )}
               >
-                <span>{o}</span>
-                {value === o && <span className="text-accent">✓</span>}
+                {renderAvatar?.(o, 30)}
+                <span className="truncate">{o}</span>
+                {value === o && <span className="ml-auto text-accent">✓</span>}
               </button>
-            ))}
+            )}
+          />
+          <div className="mt-1.5 border-t border-border pt-1.5 text-[11px] text-mute">
+            {filtered.length.toLocaleString()}
+            {filtered.length === 1 ? " player" : " players"}
           </div>
         </Popover.Content>
       </Popover.Portal>

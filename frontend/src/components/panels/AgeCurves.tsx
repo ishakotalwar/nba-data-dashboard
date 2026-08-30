@@ -5,12 +5,13 @@ import { MultiSelect } from "@/components/ui/MultiSelect";
 import { Select } from "@/components/ui/Select";
 import { Plot } from "@/components/ui/Plot";
 import { ErrorNotice } from "@/components/ui/ErrorNotice";
+import { playerAvatar } from "@/components/ui/Avatar";
+import { PlayerLegend } from "@/components/ui/PlayerLegend";
 
 export function AgeCurves({ meta }: { meta: Meta }) {
+  const avatar = playerAvatar(meta);
   const [players, setPlayers] = useState<string[]>([]);
-  const [metric, setMetric] = useState<string>(
-    meta.metrics.includes("ts_pct") ? "ts_pct" : meta.metrics[0] ?? ""
-  );
+  const [metric, setMetric] = useState("");
   const [data, setData] = useState<any>(null);
   const [loading, setLoading] = useState(false);
   const [err, setErr] = useState<string | null>(null);
@@ -54,15 +55,15 @@ export function AgeCurves({ meta }: { meta: Meta }) {
           <div className="grid gap-3 md:grid-cols-3">
             <div className="md:col-span-2">
               <div className="label mb-1.5">Players (up to 5)</div>
-              <MultiSelect options={meta.players} value={players} onChange={setPlayers} max={5} />
+              <MultiSelect options={meta.players} value={players} onChange={setPlayers} max={5} renderAvatar={avatar} />
             </div>
             <div>
               <div className="label mb-1.5">Metric</div>
-              <Select value={metric} onChange={setMetric} options={meta.metrics} />
+              <Select value={metric} onChange={setMetric} options={meta.metrics} placeholder="Select" />
             </div>
           </div>
           <div className="flex items-center gap-3">
-            <button className="btn btn-primary" onClick={fetchIt} disabled={loading || players.length === 0}>
+            <button className="btn btn-primary" onClick={fetchIt} disabled={loading || players.length === 0 || !metric}>
               {loading ? "Fetching…" : "Plot curves"}
             </button>
           </div>
@@ -78,15 +79,23 @@ export function AgeCurves({ meta }: { meta: Meta }) {
               Pick 1–5 players and press “Plot curves”.
             </div>
           ) : (
+            <>
+            <PlayerLegend
+              names={(data?.curves ?? []).filter((c: any) => c.points?.length).map((c: any) => c.player)}
+              renderAvatar={avatar}
+              className="mb-1 px-1"
+            />
             <Plot
               data={traces as any}
               layout={{
+                showlegend: false,
                 xaxis: { title: "Age at season start", gridcolor: "#1f2630" },
                 yaxis: { title: metric, gridcolor: "#1f2630" },
                 hovermode: "x unified",
               }}
               height={500}
             />
+            </>
           )}
         </CardBody>
       </Card>

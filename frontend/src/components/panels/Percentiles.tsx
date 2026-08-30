@@ -4,9 +4,11 @@ import { Card, CardBody, CardHeader } from "@/components/ui/Card";
 import { PlayerCombobox } from "@/components/ui/PlayerCombobox";
 import { Select } from "@/components/ui/Select";
 import { Plot } from "@/components/ui/Plot";
+import { playerAvatar } from "@/components/ui/Avatar";
 
 export function Percentiles({ meta }: { meta: Meta }) {
-  const [player, setPlayer] = useState(meta.players[0] ?? "");
+  const avatar = playerAvatar(meta);
+  const [player, setPlayer] = useState("");
   const [season, setSeason] = useState(meta.seasons[meta.seasons.length - 1] ?? "");
   const [data, setData] = useState<any>(null);
 
@@ -62,7 +64,7 @@ export function Percentiles({ meta }: { meta: Meta }) {
         <CardBody className="grid gap-3 md:grid-cols-2">
           <div>
             <div className="label mb-1.5">Player</div>
-            <PlayerCombobox options={meta.players} value={player} onChange={setPlayer} />
+            <PlayerCombobox options={meta.players} value={player} onChange={setPlayer} renderAvatar={avatar} />
           </div>
           <div>
             <div className="label mb-1.5">Season</div>
@@ -72,7 +74,10 @@ export function Percentiles({ meta }: { meta: Meta }) {
       </Card>
 
       <Card>
-        <CardHeader title={player && season ? `${player} — ${season}` : "—"} />
+        <CardHeader
+          lead={player ? avatar(player, 44) : undefined}
+          title={player && season ? `${player} — ${season}` : "—"}
+        />
         <CardBody>
           {!traces.length ? (
             <div className="grid place-items-center py-10 text-sm text-mute">No data for this player/season.</div>

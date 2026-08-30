@@ -4,12 +4,13 @@ import { Card, CardBody, CardHeader } from "@/components/ui/Card";
 import { MultiSelect } from "@/components/ui/MultiSelect";
 import { Plot } from "@/components/ui/Plot";
 import { cn } from "@/lib/cn";
+import { playerAvatar } from "@/components/ui/Avatar";
+import { PlayerLegend } from "@/components/ui/PlayerLegend";
 
 export function Compare({ meta }: { meta: Meta }) {
+  const avatar = playerAvatar(meta);
   const [players, setPlayers] = useState<string[]>([]);
-  const [metrics, setMetrics] = useState<string[]>(
-    ["ts_pct", "ortg", "drtg"].filter((m) => meta.metrics.includes(m))
-  );
+  const [metrics, setMetrics] = useState<string[]>([]);
   const [view, setView] = useState<"radar" | "bar">("radar");
   const [data, setData] = useState<any>(null);
   const [loading, setLoading] = useState(false);
@@ -32,6 +33,13 @@ export function Compare({ meta }: { meta: Meta }) {
       .catch(() => setData(null))
       .finally(() => setLoading(false));
   }, [players, metrics, meta.seasons, meta.league]);
+
+  // Players in trace order, for the face legend. Only the radar view maps one
+  // trace per player; the bar and small-multiple views key traces by metric.
+  const legendNames = useMemo<string[]>(() => {
+    if (!data?.radar || !data.single_season || view !== "radar") return [];
+    return Object.keys(data.radar.values as Record<string, number[]>);
+  }, [data, view]);
 
   const traces = useMemo(() => {
     if (!data?.rows?.length) return [];
@@ -88,7 +96,7 @@ export function Compare({ meta }: { meta: Meta }) {
     const layout: any = { grid: { rows: n, columns: 1, pattern: "independent" }, height: Math.min(900, 240 * n) };
     metrics.forEach((m, i) => {
       layout[`yaxis${i + 1}`] = { title: m, gridcolor: "#1f2630" };
-      layout[`xaxis${i + 1}`] = { gridcolor: "#1f2630" };
+      layout[`xaxis${i + 1}`] = { gridcolor: "#1f2630", type: "category", nticks: 10, tickangle: 0 };
     });
     return layout;
   }, [data, metrics, view]);
@@ -101,7 +109,7 @@ export function Compare({ meta }: { meta: Meta }) {
           <div className="grid gap-3 md:grid-cols-2">
             <div>
               <div className="label mb-1.5">Players (up to 5)</div>
-              <MultiSelect options={meta.players} value={players} onChange={setPlayers} max={5} />
+              <MultiSelect options={meta.players} value={players} onChange={setPlayers} max={5} renderAvatar={avatar} />
             </div>
             <div>
               <div className="label mb-1.5">Metrics</div>
@@ -140,7 +148,16 @@ export function Compare({ meta }: { meta: Meta }) {
               Pick at least one player and one metric.
             </div>
           )}
-          {traces.length > 0 && <Plot data={traces as any} layout={layout} height={Math.max(460, (layout as any).height ?? 460)} />}
+          {legendNames.length > 0 && (
+            <PlayerLegend names={legendNames} renderAvatar={avatar} className="mb-1 px-1" />
+          )}
+          {traces.length > 0 && (
+            <Plot
+              data={traces as any}
+              layout={{ ...(layout as any), showlegend: legendNames.length === 0 }}
+              height={Math.max(460, (layout as any).height ?? 460)}
+            />
+          )}
         </CardBody>
       </Card>
     </div>

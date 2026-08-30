@@ -5,7 +5,7 @@ import { Select } from "@/components/ui/Select";
 import { Plot } from "@/components/ui/Plot";
 
 export function Teams({ meta }: { meta: Meta }) {
-  const [team, setTeam] = useState(meta.teams[0] ?? "");
+  const [team, setTeam] = useState("");
   const [series, setSeries] = useState<any>(null);
   const [season, setSeason] = useState<string>("");
   const [factors, setFactors] = useState<any>(null);
@@ -24,28 +24,45 @@ export function Teams({ meta }: { meta: Meta }) {
     api.teamFactors(team, season, meta.league).then(setFactors).catch(() => setFactors(null));
   }, [team, season]);
 
-  const winsTrace = useMemo(() => {
+  const ratingTrace = useMemo(() => {
     if (!series?.rows) return [];
     const seasons = series.rows.map((r: any) => r.season);
     return [
-      { type: "scatter", mode: "lines+markers", name: "Wins", x: seasons, y: series.rows.map((r: any) => r.wins) },
-      { type: "scatter", mode: "lines+markers", name: "Losses", x: seasons, y: series.rows.map((r: any) => r.losses) },
+      { type: "scatter", mode: "lines+markers", name: "Offensive rating",
+        x: seasons, y: series.rows.map((r: any) => r.ortg) },
+      { type: "scatter", mode: "lines+markers", name: "Defensive rating",
+        x: seasons, y: series.rows.map((r: any) => r.drtg) },
     ];
   }, [series]);
 
-  const shootingTrace = useMemo(() => {
+  // Net is on a different scale (around 0, not around 110), so it gets its own
+  // chart rather than a second y-axis.
+  const netTrace = useMemo(() => {
     if (!series?.rows) return [];
-    const seasons = series.rows.map((r: any) => r.season);
-    const keys = ["FG_PCT", "FG3_PCT", "FT_PCT"];
-    return keys
-      .filter((k) => series.rows.some((r: any) => r[k] != null))
-      .map((k) => ({
-        type: "scatter",
-        mode: "lines+markers",
-        name: k,
-        x: seasons,
-        y: series.rows.map((r: any) => r[k]),
-      }));
+    return [
+      {
+        type: "bar",
+        name: "Net rating",
+        x: series.rows.map((r: any) => r.season),
+        y: series.rows.map((r: any) =>
+          r.ortg != null && r.drtg != null ? +(r.ortg - r.drtg).toFixed(1) : null
+        ),
+        marker: {
+          color: series.rows.map((r: any) =>
+            r.ortg != null && r.drtg != null && r.ortg - r.drtg >= 0 ? "#4dabff" : "#d73027"
+          ),
+        },
+      },
+    ];
+  }, [series]);
+
+  const paceTrace = useMemo(() => {
+    if (!series?.rows) return [];
+    return [
+      { type: "scatter", mode: "lines+markers", name: "Pace",
+        x: series.rows.map((r: any) => r.season),
+        y: series.rows.map((r: any) => r.pace) },
+    ];
   }, [series]);
 
   const factorsTrace = useMemo(() => {
@@ -78,12 +95,12 @@ export function Teams({ meta }: { meta: Meta }) {
   return (
     <div className="space-y-4">
       <Card>
-        <CardHeader title="Teams" subtitle="Historical wins/losses, shooting, and Dean Oliver's Four Factors" />
+        <CardHeader title="Teams" subtitle="Rate stats over time, plus Dean Oliver's Four Factors against the league" />
         <CardBody>
           <div className="grid gap-3 md:grid-cols-2">
             <div>
               <div className="label mb-1.5">Team</div>
-              <Select value={team} onChange={setTeam} options={meta.teams} />
+              <Select value={team} onChange={setTeam} options={meta.teams} placeholder="Select" />
             </div>
             <div>
               <div className="label mb-1.5">Season (for Four Factors)</div>
@@ -95,26 +112,54 @@ export function Teams({ meta }: { meta: Meta }) {
 
       <div className="grid gap-4 lg:grid-cols-2">
         <Card>
-          <CardHeader title="Wins & losses" />
+          <CardHeader title="Offensive & defensive rating" subtitle="Points scored / allowed per 100 possessions" />
           <CardBody>
-            {winsTrace.length === 0 ? (
+            {ratingTrace.length === 0 ? (
               <div className="py-10 text-center text-sm text-mute">No data.</div>
             ) : (
-              <Plot data={winsTrace as any} layout={{ margin: { t: 20 } }} height={320} />
+              <Plot
+                data={ratingTrace as any}
+                layout={{ margin: { t: 20 }, xaxis: { type: "category", nticks: 10, tickangle: 0 } }}
+                height={320}
+              />
             )}
           </CardBody>
         </Card>
         <Card>
-          <CardHeader title="Shooting %" />
+          <CardHeader title="Net rating" subtitle="ORtg − DRtg; above zero outscores its opponents" />
           <CardBody>
-            {shootingTrace.length === 0 ? (
+            {netTrace.length === 0 ? (
               <div className="py-10 text-center text-sm text-mute">No data.</div>
             ) : (
-              <Plot data={shootingTrace as any} layout={{ margin: { t: 20 } }} height={320} />
+              <Plot
+                data={netTrace as any}
+                layout={{
+                  margin: { t: 20 },
+                  showlegend: false,
+                  xaxis: { type: "category", nticks: 10, tickangle: 0 },
+                  yaxis: { zerolinecolor: "#3a4250", zerolinewidth: 1 },
+                }}
+                height={320}
+              />
             )}
           </CardBody>
         </Card>
       </div>
+
+      <Card>
+        <CardHeader title="Pace" subtitle="Possessions per game" />
+        <CardBody>
+          {paceTrace.length === 0 ? (
+            <div className="py-10 text-center text-sm text-mute">No data.</div>
+          ) : (
+            <Plot
+              data={paceTrace as any}
+              layout={{ margin: { t: 20 }, showlegend: false, xaxis: { type: "category", nticks: 12, tickangle: 0 } }}
+              height={280}
+            />
+          )}
+        </CardBody>
+      </Card>
 
       <Card>
         <CardHeader
@@ -127,7 +172,7 @@ export function Teams({ meta }: { meta: Meta }) {
           ) : (
             <Plot
               data={factorsTrace as any}
-              layout={{ barmode: "group", margin: { t: 10 } }}
+              layout={{ barmode: "group", margin: { t: 10 }, xaxis: { type: "category" } }}
               height={360}
             />
           )}

@@ -24,6 +24,8 @@ export type Meta = {
   league: LeagueKey;
   league_label: string;
   players: string[];
+  /** player_name -> ESPN athlete id, used to build headshot URLs. */
+  player_ids: Record<string, number>;
   teams: string[];
   seasons: string[];
   metrics: string[];
@@ -118,6 +120,9 @@ export const api = {
 
   teamSeries: (team: string, league: LeagueKey) =>
     fetch(`${BASE}/teams/series?${q(league, { team })}`).then((r) => j<any>(r)),
+
+  teamsLeague: (season: string, league: LeagueKey) =>
+    fetch(`${BASE}/teams/league?${q(league, { season })}`).then((r) => j<any>(r)),
 
   teamFactors: (team: string, season: string, league: LeagueKey) =>
     fetch(`${BASE}/teams/factors?${q(league, { team, season })}`).then((r) => j<any>(r)),

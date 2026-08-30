@@ -6,13 +6,15 @@ import { Select } from "@/components/ui/Select";
 import { Slider } from "@/components/ui/Slider";
 import { Plot } from "@/components/ui/Plot";
 import { ErrorNotice } from "@/components/ui/ErrorNotice";
+import { playerAvatar } from "@/components/ui/Avatar";
 
 const STATS = ["PTS", "REB", "AST", "STL", "BLK", "TOV", "MIN", "FG_PCT", "FG3_PCT"];
 
 export function GameLog({ meta }: { meta: Meta }) {
-  const [player, setPlayer] = useState("Stephen Curry");
+  const avatar = playerAvatar(meta);
+  const [player, setPlayer] = useState("");
   const [season, setSeason] = useState(meta.seasons[meta.seasons.length - 1] ?? "");
-  const [stat, setStat] = useState("PTS");
+  const [stat, setStat] = useState("");
   const [window, setWindow] = useState(10);
   const [data, setData] = useState<any>(null);
   const [loading, setLoading] = useState(false);
@@ -67,7 +69,7 @@ export function GameLog({ meta }: { meta: Meta }) {
           <div className="grid gap-3 md:grid-cols-4">
             <div>
               <div className="label mb-1.5">Player</div>
-              <PlayerCombobox options={meta.players} value={player} onChange={setPlayer} />
+              <PlayerCombobox options={meta.players} value={player} onChange={setPlayer} renderAvatar={avatar} />
             </div>
             <div>
               <div className="label mb-1.5">Season</div>
@@ -75,7 +77,7 @@ export function GameLog({ meta }: { meta: Meta }) {
             </div>
             <div>
               <div className="label mb-1.5">Stat</div>
-              <Select value={stat} onChange={setStat} options={STATS} />
+              <Select value={stat} onChange={setStat} options={STATS} placeholder="Select" />
             </div>
             <div>
               <div className="label mb-1.5">Rolling window: {window}</div>
@@ -83,7 +85,7 @@ export function GameLog({ meta }: { meta: Meta }) {
             </div>
           </div>
           <div className="flex items-center gap-3">
-            <button className="btn btn-primary" onClick={fetchIt} disabled={loading}>
+            <button className="btn btn-primary" onClick={fetchIt} disabled={loading || !player || !stat}>
               {loading ? "Fetching…" : "Fetch game log"}
             </button>
             {data?.season_avg != null && (
@@ -97,7 +99,10 @@ export function GameLog({ meta }: { meta: Meta }) {
       </Card>
 
       <Card>
-        <CardHeader title={data ? `${data.player} — ${data.season} — ${data.stat}` : "—"} />
+        <CardHeader
+          lead={data ? avatar(data.player, 44) : undefined}
+          title={data ? `${data.player} — ${data.season} — ${data.stat}` : "—"}
+        />
         <CardBody>
           {!traces.length ? (
             <div className="grid place-items-center py-10 text-sm text-mute">

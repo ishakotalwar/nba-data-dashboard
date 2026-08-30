@@ -101,6 +101,7 @@ def meta(league: str | None = None):
         "league": lg.key,
         "league_label": lg.label,
         "players": data.player_names(lg),
+        "player_ids": data.player_ids(lg),
         "teams": data.team_names(lg),
         "seasons": data.seasons(lg),
         "metrics": data.available_metrics(lg),
@@ -428,6 +429,42 @@ def team_factors(team: str, season: str, league: str | None = None):
     lg_ff_rows = lg.apply(_four_factors, axis=1, result_type="expand")
     lg_avg = lg_ff_rows.mean(numeric_only=True).to_dict()
     return _json_safe({"team": team, "season": season, "team_ff": team_ff, "league_avg": lg_avg})
+
+
+@app.get("/api/teams/league")
+def teams_league(season: str, league: str | None = None):
+    """Every team in one season, with the rate stats that actually describe a
+    team: offensive/defensive/net rating, pace, and the Four Factors."""
+    lg = leagues.get(league)
+    tdf = data.teams(lg)
+    sub = tdf[tdf["season"] == str(season)].copy()
+    if sub.empty:
+        raise HTTPException(404, f"No {lg.label} team data for {season}")
+
+    num = ["wins", "losses", "ortg", "drtg", "pace",
+           "FGM", "FGA", "FG3M", "FTA", "TOV", "OREB", "DREB"]
+    sub = data.clean_numeric(sub, num)
+
+    ff = sub.apply(_four_factors, axis=1, result_type="expand")
+    out = pd.DataFrame({
+        "team": sub["team_name"],
+        "wins": sub["wins"],
+        "losses": sub["losses"],
+        "ortg": sub["ortg"],
+        "drtg": sub["drtg"],
+        "net": (sub["ortg"] - sub["drtg"]).round(1),
+        "pace": sub["pace"],
+    })
+    games = sub["wins"] + sub["losses"]
+    out["win_pct"] = (sub["wins"] / games.where(games > 0)).round(3)
+    for k in ("eFG%", "TOV%", "ORB%", "FT rate"):
+        out[k] = ff[k].round(3)
+
+    out = out.sort_values("net", ascending=False)
+    avg = {c: float(pd.to_numeric(out[c], errors="coerce").mean())
+           for c in ("ortg", "drtg", "net", "pace", "eFG%", "TOV%", "ORB%", "FT rate")}
+    return _json_safe({"season": str(season), "league": lg.key,
+                       "rows": data.records(out), "league_avg": avg})
 
 
 @app.get("/api/shots")

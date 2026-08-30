@@ -63,6 +63,18 @@ def player_names(league: League = DEFAULT) -> list[str]:
 
 
 @lru_cache(maxsize=8)
+def player_ids(league: League = DEFAULT) -> dict[str, int]:
+    """player_name -> id. These are ESPN athlete ids for sdv-sourced data, which
+    is what the headshot CDN is keyed by. Latest season wins on a name clash."""
+    df = players(league)
+    if "player_id" not in df.columns:
+        return {}
+    latest = df.sort_values("season").drop_duplicates("player_name", keep="last")
+    return {str(n): int(i) for n, i in zip(latest["player_name"], latest["player_id"])
+            if pd.notna(i)}
+
+
+@lru_cache(maxsize=8)
 def team_names(league: League = DEFAULT) -> list[str]:
     return sorted(teams(league).get("team_name", pd.Series(dtype=str)).dropna().unique().tolist())
 

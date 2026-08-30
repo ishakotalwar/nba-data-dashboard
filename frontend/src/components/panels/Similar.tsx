@@ -4,11 +4,14 @@ import { Card, CardBody, CardHeader } from "@/components/ui/Card";
 import { PlayerCombobox } from "@/components/ui/PlayerCombobox";
 import { Slider } from "@/components/ui/Slider";
 import { Plot } from "@/components/ui/Plot";
+import { playerAvatar } from "@/components/ui/Avatar";
+import { PlayerLegend } from "@/components/ui/PlayerLegend";
 
 const FEATURES = ["pts", "ast", "reb", "tov", "ts_pct", "usg_pct", "ortg", "drtg"];
 
 export function Similar({ meta }: { meta: Meta }) {
-  const [anchor, setAnchor] = useState(meta.players[0] ?? "");
+  const avatar = playerAvatar(meta);
+  const [anchor, setAnchor] = useState("");
   const [k, setK] = useState(5);
   const [weights, setWeights] = useState<Record<string, number>>(
     Object.fromEntries(FEATURES.map((f) => [f, 1.0]))
@@ -72,7 +75,7 @@ export function Similar({ meta }: { meta: Meta }) {
           <div className="grid gap-3 md:grid-cols-3">
             <div>
               <div className="label mb-1.5">Anchor</div>
-              <PlayerCombobox options={meta.players} value={anchor} onChange={setAnchor} />
+              <PlayerCombobox options={meta.players} value={anchor} onChange={setAnchor} renderAvatar={avatar} />
             </div>
             <div>
               <div className="label mb-1.5">Top-K: {k}</div>
@@ -121,7 +124,12 @@ export function Similar({ meta }: { meta: Meta }) {
                 {data?.matches?.map((m: any, i: number) => (
                   <tr key={m.player_name} className="border-t border-border/60">
                     <td className="px-5 py-2 text-mute">{i + 1}</td>
-                    <td className="px-5 py-2">{m.player_name}</td>
+                    <td className="px-5 py-2">
+                      <span className="flex items-center gap-2">
+                        {avatar(m.player_name, 30)}
+                        <span className="truncate">{m.player_name}</span>
+                      </span>
+                    </td>
                     <td className="px-5 py-2 text-right tabular-nums">{(m.similarity * 100).toFixed(1)}%</td>
                   </tr>
                 ))}
@@ -139,9 +147,16 @@ export function Similar({ meta }: { meta: Meta }) {
             {radarTraces.length === 0 ? (
               <div className="grid place-items-center py-10 text-sm text-mute">No data.</div>
             ) : (
+              <>
+              <PlayerLegend
+                names={data?.radar ? [data.radar.anchor.name, ...data.radar.peers.map((p: any) => p.name)] : []}
+                renderAvatar={avatar}
+                className="mb-2 px-1"
+              />
               <Plot
                 data={radarTraces as any}
                 layout={{
+                  showlegend: false,
                   polar: {
                     bgcolor: "rgba(0,0,0,0)",
                     radialaxis: { range: [0, 1], gridcolor: "#1f2630", color: "#8a94a2" },
@@ -151,6 +166,7 @@ export function Similar({ meta }: { meta: Meta }) {
                 }}
                 height={520}
               />
+              </>
             )}
           </CardBody>
         </Card>

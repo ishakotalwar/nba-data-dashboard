@@ -4,12 +4,12 @@ import { Card, CardBody, CardHeader } from "@/components/ui/Card";
 import { MultiSelect } from "@/components/ui/MultiSelect";
 import { PlayerCombobox } from "@/components/ui/PlayerCombobox";
 import { Plot } from "@/components/ui/Plot";
+import { playerAvatar } from "@/components/ui/Avatar";
 
 export function Trends({ meta }: { meta: Meta }) {
-  const [player, setPlayer] = useState<string>(meta.players[0] ?? "");
-  const [metrics, setMetrics] = useState<string[]>(
-    ["pts", "ast", "reb", "ts_pct"].filter((m) => meta.metrics.includes(m))
-  );
+  const avatar = playerAvatar(meta);
+  const [player, setPlayer] = useState("");
+  const [metrics, setMetrics] = useState<string[]>([]);
   const [leagueAvg, setLeagueAvg] = useState(true);
   const [data, setData] = useState<any>(null);
 
@@ -49,7 +49,7 @@ export function Trends({ meta }: { meta: Meta }) {
         });
       });
       layout[`yaxis${i + 1}`] = { title: m, gridcolor: "#1f2630" };
-      layout[`xaxis${i + 1}`] = { gridcolor: "#1f2630" };
+      layout[`xaxis${i + 1}`] = { gridcolor: "#1f2630", type: "category", nticks: 10, tickangle: 0 };
     });
     return { traces, layout };
   }, [data, leagueAvg]);
@@ -61,7 +61,7 @@ export function Trends({ meta }: { meta: Meta }) {
         <CardBody className="grid gap-3 md:grid-cols-3">
           <div>
             <div className="label mb-1.5">Player</div>
-            <PlayerCombobox options={meta.players} value={player} onChange={setPlayer} />
+            <PlayerCombobox options={meta.players} value={player} onChange={setPlayer} renderAvatar={avatar} />
           </div>
           <div className="md:col-span-2">
             <div className="label mb-1.5">Metrics</div>

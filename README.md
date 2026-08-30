@@ -179,7 +179,7 @@ Data quirks the ETL handles:
 - Free throws carry a placeholder shot coordinate rather than a real location,
   and are excluded from shot charts.
 - Shot coordinates use `coordinate_x`/`coordinate_y` (court-length and -width in
-  feet), **not** the `_raw` pair — the raw values are integer-quantised and put
+  feet), **not** the `_raw` pair — the raw values are integer-quantized and put
   roughly half of all three-pointers inside the arc.
 - ESPN counts the WNBA Commissioner's Cup final as a regular-season game, so a
   win total can differ from the official standings by one.
