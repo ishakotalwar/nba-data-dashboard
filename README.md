@@ -123,8 +123,22 @@ cannot contain, so it has its own pipeline — `etl/schedule_etl.py` writes
 ETL. Times are converted to US Eastern before the calendar day is taken, since
 a 02:00 UTC tip-off belongs to the previous evening.
 
+The same pipeline fetches **rosters**, which the projections need as much as
+the schedule: a rotation built from "whoever finished last season on this team"
+puts about a quarter of the league on the wrong bench once trades, free agency
+and the draft have happened. Rotations follow the published roster for the
+season being predicted, and fall back to last season's teams only when no
+roster exists yet.
+
+Inside a season already under way the projections use that season's games —
+ignoring them would forecast a live season from last year's form — while the
+backtest still sees only seasons strictly before its target, so the reported
+error stays honest. Rotation membership is decided by minutes rather than games
+played, since a player at 30 minutes a night belongs in it whether they have
+appeared 11 times or 41.
+
 ```bash
-python etl/schedule_etl.py                # both leagues, current and next season
+python etl/schedule_etl.py                # schedules + rosters, both leagues
 python etl/schedule_etl.py --league wnba
 ```
 

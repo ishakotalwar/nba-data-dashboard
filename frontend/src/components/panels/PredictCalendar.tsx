@@ -316,19 +316,6 @@ function GameRow({
                     completed={game.completed}
                   />
                 </div>
-                <p className="mt-3 text-xs leading-relaxed text-mute">
-                  {lines.accuracy?.mae != null && (
-                    <>
-                      Lines land {lines.accuracy.mae} points from the box score on average
-                      over {lines.accuracy.player_games.toLocaleString()} player-games in{" "}
-                      {lines.accuracy.season}
-                      {lines.accuracy.naive_mae != null &&
-                        ` (repeating last season: ${lines.accuracy.naive_mae})`}
-                      .{" "}
-                    </>
-                  )}
-                  {lines.roster_note}
-                </p>
               </>
             )}
           </div>
@@ -387,6 +374,7 @@ function TeamLines({
             <tr key={r.player_id} className="border-t border-border/40">
               <td className="truncate py-1 pr-2 text-ink">
                 {r.player_name}
+                <InjuryFlag injury={r.injury} />
                 {completed && !r.actual && <span className="ml-1.5 text-mute">dnp</span>}
               </td>
               {(["pts", "reb", "ast"] as const).map((m) => (
@@ -402,5 +390,28 @@ function TeamLines({
         </tbody>
       </table>
     </div>
+  );
+}
+
+/**
+ * The player's current injury status, shown beside their name.
+ *
+ * The projection behind the row is deliberately unadjusted — there is no
+ * archive of past injury reports to fit an availability model against — so
+ * this is a flag for the reader, not an input to the number.
+ */
+function InjuryFlag({ injury }: { injury?: { status: string; type?: string } | null }) {
+  if (!injury?.status) return null;
+  const out = /out|suspend/i.test(injury.status);
+  return (
+    <span
+      title={[injury.status, injury.type].filter(Boolean).join(" · ")}
+      className={cn(
+        "ml-1.5 rounded px-1 py-px text-[10px] font-medium uppercase tracking-wide",
+        out ? "bg-bad/15 text-bad" : "bg-accent/15 text-accent",
+      )}
+    >
+      {out ? "out" : "dtd"}
+    </span>
   );
 }

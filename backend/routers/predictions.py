@@ -216,8 +216,13 @@ def game(game_id: str, league: str | None = None, top: int = predictions.ROTATIO
         "metrics": list(predictions.GAME_LINE_METRICS),
         "accuracy": predictions.game_line_backtest(lg, "pts"),
         "model": "marcel-style projection, adjusted for opponent and venue",
+        "roster_source": predictions.roster_source(lg, int(g.season)),
         "roster_note": (
-            "Rotations are last season's, ordered by minutes — the schedule "
-            "carries no roster, so trades and signings since are not reflected."
+            "Rotations follow the published roster for this season, ordered by "
+            "last season's minutes. Rookies and players with no prior games "
+            "have nothing to project from and are left out."
+            if predictions.roster_source(lg, int(g.season)) == "roster"
+            else "No roster is published for this season yet, so rotations are "
+                 "last season's — trades and signings since are not reflected."
         ),
     })

@@ -43,6 +43,7 @@ AGE_SLOPE_OLD = 0.003        # decline per year above it
 PROJECTED_METRICS = ("pts", "reb", "ast", "stl", "blk", "tov", "ts_pct")
 MIN_SEASONS_FOR_PROJECTION = 1
 PROJECTION_MIN_GP = 20       # a season must be this long to inform a projection
+LIVE_MIN_GAMES = 3           # inside a season in progress, just a noise screen
 
 
 @lru_cache(maxsize=4)
@@ -287,7 +288,8 @@ def next_season(league: League = DEFAULT) -> int:
     return int(hist.season_int.max()) + 1
 
 
-def project_player(league: League, player_id: int, target_season: str | None = None) -> dict:
+def project_player(league: League, player_id: int, target_season: str | None = None,
+                   include_target: bool = False) -> dict:
     """Projected per-game line for a player's next season.
 
     Weighted blend of up to three prior seasons, regressed toward the league
@@ -304,7 +306,12 @@ def project_player(league: League, player_id: int, target_season: str | None = N
     latest_season = int(rows.iloc[-1]["season_int"])
     target = int(target_season) if target_season else latest_season + 1
 
-    prior = rows[rows.season_int < target].tail(len(SEASON_WEIGHTS))
+    # Strictly before the target by default: a backtest must not see the season
+    # it is predicting. `include_target` is for a season already under way,
+    # where games played so far are legitimately known — and where ignoring
+    # them means projecting a live season from last year's form.
+    mask = rows.season_int <= target if include_target else rows.season_int < target
+    prior = rows[mask].tail(len(SEASON_WEIGHTS))
     if prior.empty or len(prior) < MIN_SEASONS_FOR_PROJECTION:
         raise ValueError(f"no seasons before {target} for {name}")
 
@@ -513,6 +520,46 @@ def _defence_factors(league: League, season: int) -> dict[str, float]:
 
 
 @lru_cache(maxsize=8)
+def _injury_index(league: League) -> dict[int, dict]:
+    """player_id -> their current injury entry, empty when none is on disk."""
+    df = data.injuries(league)
+    if df is None or df.empty:
+        return {}
+    out: dict[int, dict] = {}
+    for r in df.itertuples():
+        try:
+            pid = int(r.player_id)
+        except (TypeError, ValueError):
+            continue
+        out[pid] = {
+            "status": str(getattr(r, "status", "") or ""),
+            "type": str(getattr(r, "type", "") or ""),
+            "detail": str(getattr(r, "detail", "") or ""),
+            "comment": str(getattr(r, "comment", "") or ""),
+        }
+    return out
+
+
+@lru_cache(maxsize=8)
+def _roster_teams(league: League, season: int) -> dict[int, str] | None:
+    """player_id -> the team they are on for `season`, or None if no roster
+    for that season has been fetched."""
+    df = data.roster(league)
+    if df is None or df.empty:
+        return None
+    rows = df[df["season"].astype(str) == str(season)]
+    if rows.empty:
+        return None
+    return {int(r.player_id): league.canonical_team(str(r.team))
+            for r in rows.itertuples() if pd.notna(r.player_id)}
+
+
+def roster_source(league: League, season: int) -> str:
+    """Which of the two roster sources a projection for `season` is using."""
+    return "roster" if _roster_teams(league, int(season)) is not None else "last-season"
+
+
+@lru_cache(maxsize=8)
 def _rotations(league: League, target_season: int) -> dict[str, list[dict]]:
     """Each team's rotation for `target_season`, every player projected.
 
@@ -521,24 +568,49 @@ def _rotations(league: League, target_season: int) -> dict[str, list[dict]]:
     after that season are not in the data.
     """
     hist = _player_history(league)
-    prior = hist[hist.season_int < target_season]
-    if prior.empty:
+    # A season with games already played is the best description of who is
+    # playing and how well; only fall back to earlier seasons before tip-off.
+    live = bool((hist.season_int == target_season).any())
+    pool = hist[hist.season_int <= target_season] if live else hist[hist.season_int < target_season]
+    if pool.empty:
         return {}
-    latest = int(prior.season_int.max())
-    active = prior[(prior.season_int == latest) & (prior.gp_num >= PROJECTION_MIN_GP)]
+    latest = int(pool.season_int.max())
+    # Games played measures availability, not role: a player at 30 minutes a
+    # night is in the rotation whether they have appeared 11 times or 41. So
+    # within a live season the games floor only screens out one-off cameos,
+    # and the minutes sort plus the top-N cut decide who actually shows.
+    # Filtering on games here dropped players like an MVP missing time injured.
+    floor = LIVE_MIN_GAMES if live else PROJECTION_MIN_GP
+    active = pool[(pool.season_int == latest) & (pool.gp_num >= floor)]
+
+    # Where the player actually is *now*. Falls back to last season's team when
+    # no roster has been published for the target season yet.
+    signed = _roster_teams(league, target_season)
+    injury_index = _injury_index(league)
 
     out: dict[str, list[dict]] = {}
     for row in active.itertuples():
-        team = str(getattr(row, "team_abbr", "") or "")
+        pid = int(row.player_id)
+        if signed is not None:
+            team = signed.get(pid)
+            if team is None:
+                continue  # not on any roster: retired, unsigned, or overseas
+        else:
+            team = str(getattr(row, "team_abbr", "") or "")
         if not team:
             continue
         try:
-            p = project_player(league, int(row.player_id), str(target_season))
+            p = project_player(league, int(row.player_id), str(target_season),
+                               include_target=live)
         except (KeyError, ValueError):
             continue
         out.setdefault(league.canonical_team(team), []).append({
             "player_id": p["player_id"],
             "player_name": p["player_name"],
+            # Flag only. With no archive of past injury reports there is
+            # nothing to fit an availability model on, so the honest move
+            # is to show the status and leave the projection alone.
+            "injury": injury_index.get(p["player_id"]),
             "minutes": round(float(getattr(row, "min", 0.0) or 0.0), 1),
             "games_played": int(row.gp_num),
             "based_on": p["based_on"],
@@ -572,7 +644,8 @@ def game_player_lines(league: League, home: str, away: str, season: int,
             proj = player["projected"]
             rows.append({
                 **{k: player[k] for k in
-                   ("player_id", "player_name", "minutes", "games_played", "based_on")},
+                   ("player_id", "player_name", "minutes", "games_played",
+                    "based_on", "injury")},
                 **{m: _scaled(proj.get(m), scoring if m == "pts" else other)
                    for m in GAME_LINE_METRICS},
             })

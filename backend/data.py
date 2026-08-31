@@ -117,6 +117,27 @@ def schedule(league: League = DEFAULT) -> pd.DataFrame | None:
 
 
 @lru_cache(maxsize=8)
+def roster(league: League = DEFAULT) -> pd.DataFrame | None:
+    """Who is actually on each team, by season, or None if not fetched yet.
+
+    Built by `etl/schedule_etl.py`. Without it, "this team's players" can only
+    mean whoever finished the previous season there, which is wrong for about a
+    quarter of the league once trades and free agency have happened.
+    """
+    return _load_optional("roster", league)
+
+
+@lru_cache(maxsize=8)
+def injuries(league: League = DEFAULT) -> pd.DataFrame | None:
+    """The current injury report, or None if it hasn't been fetched.
+
+    A snapshot with no history — it says who is hurt *now*, so it can flag a
+    projection but cannot be backtested against past games.
+    """
+    return _load_optional("injury", league)
+
+
+@lru_cache(maxsize=8)
 def birthdates(league: League = DEFAULT) -> dict[int, pd.Timestamp]:
     """player_id -> birthdate, empty when this league has no bio file."""
     df = _load_optional("player_bio", league)
