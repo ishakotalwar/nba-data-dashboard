@@ -1,0 +1,14 @@
+# Deployment-only dependency set, deliberately smaller than the root
+# requirements.txt: Vercel caps a function at 250 MB unzipped, and
+# pyarrow + scipy + sklearn alone are ~257 MB of that.
+#
+#   scipy    -> np.histogram2d in routers/shots.py
+#   sklearn  -> manual z-score in routers/similarity.py
+#   pyarrow  -> fastparquet (10 MB vs 112 MB) for pandas.read_parquet
+#
+# streamlit/plotly/duckdb/nba_api are not imported by the API at all.
+fastapi
+pydantic
+pandas
+numpy
+fastparquet

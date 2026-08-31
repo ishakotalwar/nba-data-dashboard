@@ -56,7 +56,7 @@ def players(league: str | None = None, q: str = "", limit: int = 50):
         "league": lg.key,
         "results": [
             {"player_id": int(r.player_id), "name": r.player_name,
-             "team": r.get("team_abbr"), "last_season": r.season}
+             "team": getattr(r, "team_abbr", None), "last_season": r.season}
             for r in latest.itertuples()
         ],
     })

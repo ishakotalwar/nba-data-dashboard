@@ -13,7 +13,6 @@ import numpy as np
 import pandas as pd
 from fastapi import APIRouter, HTTPException, Query
 from pydantic import BaseModel
-from scipy.stats import binned_statistic_2d
 
 from .. import analytics, data, leagues, live
 
@@ -178,8 +177,10 @@ def shots(
 
     x, y, m = sdf["x"].to_numpy(), sdf["y"].to_numpy(), sdf["made"].to_numpy()
     xb, yb = np.linspace(-250, 250, 26), np.linspace(-52.5, 417.5, 24)
-    cnt = binned_statistic_2d(x, y, np.ones_like(x), statistic="count", bins=[xb, yb]).statistic
-    pct = binned_statistic_2d(x, y, m, statistic="mean", bins=[xb, yb]).statistic
+    cnt, _, _ = np.histogram2d(x, y, bins=[xb, yb])
+    made, _, _ = np.histogram2d(x, y, bins=[xb, yb], weights=m.astype(float))
+    # Empty bins stay NaN, matching the mean-of-nothing this replaced.
+    pct = np.divide(made, cnt, out=np.full_like(made, np.nan), where=cnt > 0)
     cx, cy = 0.5 * (xb[:-1] + xb[1:]), 0.5 * (yb[:-1] + yb[1:])
     hexes = [
         {"x": float(cx[i]), "y": float(cy[j]), "count": int(cnt[i, j]), "pct": float(pct[i, j])}

@@ -11,7 +11,6 @@ import numpy as np
 import pandas as pd
 from fastapi import APIRouter, HTTPException
 from pydantic import BaseModel
-from sklearn.preprocessing import StandardScaler
 
 from .. import analytics, data, leagues
 
@@ -89,8 +88,11 @@ def similarity(req: SimilarityRequest):
         )
     anchor_i = int(np.flatnonzero(anchor_mask.to_numpy())[0])
 
-    # z-score across the whole pool, then weight
-    X = StandardScaler().fit_transform(pool[feats].to_numpy(dtype=float))
+    # z-score across the whole pool, then weight. A zero-variance feature
+    # divides by 1 so it contributes nothing rather than producing NaN.
+    raw = pool[feats].to_numpy(dtype=float)
+    sd = raw.std(axis=0)
+    X = (raw - raw.mean(axis=0)) / np.where(sd == 0, 1.0, sd)
     base = PRESETS.get(req.preset, {})
     w = np.array([float(req.weights.get(f, base.get(f, 1.0))) for f in feats], dtype=float)
     Xw = X * w
