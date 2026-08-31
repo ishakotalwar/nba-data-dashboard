@@ -137,6 +137,21 @@ error stays honest. Rotation membership is decided by minutes rather than games
 played, since a player at 30 minutes a night belongs in it whether they have
 appeared 11 times or 41.
 
+Projected game lines are then fitted to a real game. Per-game averages come
+from each player's own past, with his own minutes and his own role; summed over
+a rebuilt squad they describe a team that would need far more than one game to
+produce them — Philadelphia's top eight projected 142 points across 243 minutes.
+So minutes are shared out as the fixed resource they are, weighted toward the
+players who earn them, with per-minute rates carried across; and each team total
+is pulled most of the way to what a team actually produces, since five players
+who each shot twenty times a night cannot all keep shooting twenty times.
+Anyone ruled out is absent entirely, and his minutes flow to his team-mates.
+
+Injuries come from ESPN's public feed (`etl/schedule_etl.py` fetches it with
+the schedule and rosters). It is a snapshot with no history, so it can decide
+who plays but cannot be backtested; the projections themselves are unadjusted
+beyond that.
+
 ```bash
 python etl/schedule_etl.py                # schedules + rosters, both leagues
 python etl/schedule_etl.py --league wnba

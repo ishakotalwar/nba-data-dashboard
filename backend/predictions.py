@@ -44,6 +44,10 @@ PROJECTED_METRICS = ("pts", "reb", "ast", "stl", "blk", "tov", "ts_pct")
 MIN_SEASONS_FOR_PROJECTION = 1
 PROJECTION_MIN_GP = 20       # a season must be this long to inform a projection
 LIVE_MIN_GAMES = 3           # inside a season in progress, just a noise screen
+MAX_MINUTES = 38.0           # nobody plays the whole game
+MINUTE_CONCENTRATION = 2.0   # fitted by eye against real rotations; see _fit_to_team_minutes
+# Statuses that mean the player will not feature, so they get no line at all.
+UNAVAILABLE = __import__("re").compile(r"out|suspend|inactive", __import__("re").I)
 
 
 @lru_cache(maxsize=4)
@@ -519,6 +523,33 @@ def _defence_factors(league: League, season: int) -> dict[str, float]:
             for t, v in per_team.items()}
 
 
+# Counting stats a team can only produce so many of in a game; a rate like
+# true shooting is a property of the player, not a share of a team total.
+TEAM_TOTAL_METRICS = ("pts", "reb", "ast", "stl", "blk", "tov")
+# How far a team's projected total is pulled toward the league average. Rates
+# taken from five players' separate pasts assume five separate balls, so the
+# raw sum runs hot; the exponent keeps better teams ahead of worse ones while
+# closing most of the gap to what a team actually produces.
+TEAM_TOTAL_SHRINK = 0.35
+
+
+@lru_cache(maxsize=8)
+def _league_team_totals(league: League) -> dict[str, float]:
+    """What one team actually puts up in a game, averaged over the league."""
+    log = data.gamelog(league)
+    if log is None or log.empty:
+        return {}
+    frame = log.copy()
+    frame["team"] = frame["MATCHUP"].astype(str).str.split().str[0]
+    cols = {"pts": "PTS", "reb": "REB", "ast": "AST",
+            "stl": "STL", "blk": "BLK", "tov": "TOV"}
+    have = {k: v for k, v in cols.items() if v in frame.columns}
+    if not have:
+        return {}
+    per_game = frame.groupby(["GAME_DATE", "team"])[list(have.values())].sum()
+    return {k: float(per_game[v].mean()) for k, v in have.items()}
+
+
 @lru_cache(maxsize=8)
 def _injury_index(league: League) -> dict[int, dict]:
     """player_id -> their current injury entry, empty when none is on disk."""
@@ -599,6 +630,10 @@ def _rotations(league: League, target_season: int) -> dict[str, list[dict]]:
             team = str(getattr(row, "team_abbr", "") or "")
         if not team:
             continue
+        injury = injury_index.get(pid)
+        if injury and UNAVAILABLE.search(injury.get("status", "")):
+            continue  # ruled out: no line, and their minutes go to team-mates
+
         try:
             p = project_player(league, int(row.player_id), str(target_season),
                                include_target=live)
@@ -610,7 +645,7 @@ def _rotations(league: League, target_season: int) -> dict[str, list[dict]]:
             # Flag only. With no archive of past injury reports there is
             # nothing to fit an availability model on, so the honest move
             # is to show the status and leave the projection alone.
-            "injury": injury_index.get(p["player_id"]),
+            "injury": injury,
             "minutes": round(float(getattr(row, "min", 0.0) or 0.0), 1),
             "games_played": int(row.gp_num),
             "based_on": p["based_on"],
@@ -618,7 +653,93 @@ def _rotations(league: League, target_season: int) -> dict[str, list[dict]]:
         })
     for team in out:
         out[team].sort(key=lambda r: r["minutes"], reverse=True)
+        _fit_to_team_minutes(league, out[team])
     return out
+
+
+def _fit_to_team_minutes(league: League, players: list[dict]) -> None:
+    """Rescale a rotation so it fits in one game, in place.
+
+    Per-game averages come from each player's own past, where they had their
+    own minutes and their own role. Summed over a squad that has since been
+    rebuilt, they describe a team that would need far more than 48 minutes a
+    night — Philadelphia's top eight projected 142 points across 243 minutes.
+
+    Minutes are the fixed resource, so they are shared out in proportion to
+    what each player has earned, and every rate is carried across at the
+    player's own per-minute production. A team-mate ruled out is simply absent
+    from the split, so his minutes flow to the others.
+    """
+    baseline = [max(float(r["minutes"] or 0.0), 0.0) for r in players]
+    total = sum(baseline)
+    if total <= 0:
+        return
+
+    budget = float(league.team_minutes)
+    # Weighting by minutes squared rather than minutes: a coach concentrates a
+    # rotation on his best players, so a starter keeps most of his workload
+    # while the deep bench absorbs the squeeze. A flat split left a stacked
+    # team's stars on 25 minutes, which no rotation looks like.
+    weights = [b ** MINUTE_CONCENTRATION for b in baseline]
+    pool = sum(weights) or 1.0
+    allotted = [w / pool * budget for w in weights]
+
+    # Nobody plays a whole game. Anything over the cap goes back to the others.
+    for _ in range(3):
+        spill = 0.0
+        free = []
+        for i, m in enumerate(allotted):
+            if m > MAX_MINUTES:
+                spill += m - MAX_MINUTES
+                allotted[i] = MAX_MINUTES
+            else:
+                free.append(i)
+        if spill <= 0.01 or not free:
+            break
+        free_pool = sum(weights[i] for i in free) or 1.0
+        for i in free:
+            allotted[i] += spill * weights[i] / free_pool
+
+    # The last redistribution can push someone back over, so clamp once more.
+    # A short-handed side then simply does not fill the budget, which is the
+    # honest outcome: there is nobody left to give the minutes to.
+    allotted = [min(m, MAX_MINUTES) for m in allotted]
+
+    for row, was, now in zip(players, baseline, allotted):
+        factor = (now / was) if was > 0 else 0.0
+        row["baseline_minutes"] = round(was, 1)
+        row["minutes"] = round(now, 1)
+        row["projected"] = {k: (None if v is None else v * factor)
+                            for k, v in row["projected"].items()}
+
+    _shrink_team_totals(league, players)
+    for row in players:
+        row["projected"] = {k: (None if v is None else round(v, 2))
+                            for k, v in row["projected"].items()}
+
+
+def _shrink_team_totals(league: League, players: list[dict]) -> None:
+    """Pull each team total toward what a team really produces, in place.
+
+    Minutes alone do not fix a squad assembled from other people's usage: five
+    players who each shot 20 times a night cannot all keep shooting 20 times.
+    Each counting stat is scaled so the team's total moves most of the way to
+    the league average, keeping better rosters ahead of worse ones instead of
+    flattening every team onto the same line.
+    """
+    norms = _league_team_totals(league)
+    for metric, average in norms.items():
+        if metric not in TEAM_TOTAL_METRICS or average <= 0:
+            continue
+        raw = sum((r["projected"].get(metric) or 0.0) for r in players)
+        if raw <= 0:
+            continue
+        target = average * (raw / average) ** TEAM_TOTAL_SHRINK
+        factor = target / raw
+        for r in players:
+            v = r["projected"].get(metric)
+            if v is not None:
+                r["projected"][metric] = v * factor
 
 
 def _scaled(value: float | None, factor: float) -> float | None:
