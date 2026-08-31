@@ -6,12 +6,15 @@ __pycache__/
 .DS_Store
 
 # Not used at request time: the ETL runs locally, app.py is the Streamlit
-# prototype, docs/ is README imagery.
-etl/
-app.py
-docs/
+# prototype, docs/ is README imagery. Leading slashes anchor these to the
+# repo root — these patterns are gitignore-style and would otherwise match
+# at any depth.
+/etl/
+/app.py
+/docs/
 
-# Deployment installs api/requirements.txt. Hiding the root file keeps the
-# Streamlit-only deps (streamlit, plotly, duckdb, nba_api) out of the bundle
-# no matter which one the builder would otherwise pick up.
-requirements.txt
+# Deployment installs api/requirements.txt. Hiding the ROOT file keeps the
+# Streamlit-only deps (streamlit, plotly, duckdb, nba_api) out of the bundle.
+# The leading slash is essential: a bare `requirements.txt` would also match
+# api/requirements.txt and ship the function with no dependencies at all.
+/requirements.txt
