@@ -1,4 +1,4 @@
-# Hoops Data Dashboard
+# Full Court
 
 ![Player overview](docs/screenshot.png)
 
