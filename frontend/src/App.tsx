@@ -10,9 +10,14 @@ import { Explorer } from "./components/panels/Explorer";
 import { ShotAnalysis } from "./components/panels/ShotAnalysis";
 import { formatSeason } from "@/lib/season";
 import { AskFullCourt } from "@/components/AskFullCourt";
+import { Landing } from "@/components/Landing";
+import { PredictTeams } from "@/components/panels/PredictTeams";
+import { PredictPlayers } from "@/components/panels/PredictPlayers";
 import { useTheme, toggleTheme } from "@/lib/theme";
 
 /** One flat nav. `group` only draws a separator — it is not a second click. */
+type Mode = "stats" | "predictions";
+
 const TABS = [
   { v: "players", label: "Players", group: "player" },
   { v: "compare", label: "Compare", group: "player" },
@@ -22,7 +27,19 @@ const TABS = [
   { v: "explorer", label: "Explorer", group: "team" },
 ] as const;
 
+const PREDICT_TABS = [
+  { v: "predict-teams", label: "Teams", group: "predict" },
+  { v: "predict-players", label: "Players", group: "predict" },
+] as const;
+
+const DEFAULT_TAB: Record<Mode, string> = {
+  stats: "players",
+  predictions: "predict-teams",
+};
+
 export default function App() {
+  // null until the visitor picks a side on the landing screen.
+  const [mode, setMode] = useState<Mode | null>(null);
   const [tab, setTab] = useState<string>("players");
   // The structured query Ask Full Court last ran, handed to whichever panel it
   // points at so "Open in …" lands on the answer instead of an empty form.
@@ -54,8 +71,27 @@ export default function App() {
 
   const seedFor = (page: string) => (seed?.page === page ? seed.state : undefined);
 
+  const switchMode = (next: Mode) => {
+    setMode(next);
+    setTab(DEFAULT_TAB[next]);
+    setSeed(null);
+  };
+
   if (err) return <Bootstrap state="error" msg={err} leagues={leagues} league={league} onLeague={setLeague} />;
   if (!meta || !league) return <Bootstrap state="loading" />;
+
+  if (mode === null) {
+    return (
+      <div className="min-h-screen bg-bg">
+        <div className="absolute right-5 top-5">
+          <ThemeToggle />
+        </div>
+        <Landing meta={meta} onPick={switchMode} />
+      </div>
+    );
+  }
+
+  const tabs = mode === "stats" ? TABS : PREDICT_TABS;
 
 
   return (
@@ -63,7 +99,12 @@ export default function App() {
       <header className="sticky top-0 z-20 border-b border-border bg-bg/80 backdrop-blur">
         <div className="mx-auto flex max-w-7xl items-center justify-between px-6 py-4">
           <div className="flex items-center gap-3">
-            <div>
+            <button
+              type="button"
+              onClick={() => setMode(null)}
+              className="text-left"
+              title="Back to the start"
+            >
               <div className="text-[15px] font-semibold leading-tight">Full Court</div>
               <div className="text-xs text-mute">
                 {meta.players.length.toLocaleString()} players ·{" "}
@@ -74,9 +115,10 @@ export default function App() {
                     )}`
                   : formatSeason(meta.seasons[0], meta.season_format)}
               </div>
-            </div>
+            </button>
           </div>
           <div className="flex items-center gap-3">
+            <ModeSwitch mode={mode} onSwitch={switchMode} />
             <ThemeToggle />
             <LeagueToggle leagues={leagues} active={league} onChange={setLeague} />
           </div>
@@ -86,9 +128,9 @@ export default function App() {
       <main className="mx-auto max-w-7xl px-6 py-6">
         <Tabs.Root value={tab} onValueChange={setTab} key={league}>
           <Tabs.List className="no-scrollbar mb-6 flex items-center gap-5 overflow-x-auto border-b border-border">
-            {TABS.map((t, i) => (
+            {tabs.map((t, i) => (
               <Fragment key={t.v}>
-                {i > 0 && TABS[i - 1].group !== t.group && (
+                {i > 0 && tabs[i - 1].group !== t.group && (
                   <span aria-hidden className="h-4 w-px shrink-0 bg-border" />
                 )}
                 <Tabs.Trigger
@@ -119,6 +161,8 @@ export default function App() {
           <Tabs.Content value="explorer">
             <Explorer meta={meta} seed={seedFor("explorer")} />
           </Tabs.Content>
+          <Tabs.Content value="predict-teams"><PredictTeams meta={meta} /></Tabs.Content>
+          <Tabs.Content value="predict-players"><PredictPlayers meta={meta} /></Tabs.Content>
         </Tabs.Root>
       </main>
 
@@ -130,6 +174,22 @@ export default function App() {
         }}
       />
     </div>
+  );
+}
+
+/** Moves between the stats half of the app and the predictions half. Present
+ *  on every page of both, so neither is a dead end. */
+function ModeSwitch({ mode, onSwitch }: { mode: Mode; onSwitch: (m: Mode) => void }) {
+  const goingTo: Mode = mode === "stats" ? "predictions" : "stats";
+  return (
+    <button
+      type="button"
+      onClick={() => onSwitch(goingTo)}
+      className="btn btn-ghost whitespace-nowrap px-3 py-1.5 text-sm"
+      title={`Switch to ${goingTo}`}
+    >
+      {mode === "stats" ? "Predictions →" : "← Stats"}
+    </button>
   );
 }
 

@@ -1,7 +1,7 @@
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { api, type Meta, type PlayerSeason } from "@/lib/api";
 import { Card, CardBody, CardHeader } from "@/components/ui/Card";
-import { Plot } from "@/components/ui/Plot";
+import { Plot, traceColor } from "@/components/ui/Plot";
 import { Slider } from "@/components/ui/Slider";
 import { PlayerSeasonSelector, emptySelection } from "@/components/ui/PlayerSeasonSelector";
 import { PlayerLegend } from "@/components/ui/PlayerLegend";
@@ -11,6 +11,17 @@ import { cn } from "@/lib/cn";
 import { formatSeason } from "@/lib/season";
 
 const PRESETS = ["Overall", "Scoring", "Shooting", "Playmaking", "Defense", "Custom"];
+
+const rowKey = (r: any) => `${r.player_id}-${r.season}`;
+
+type OverlayRow = {
+  key: string;
+  playerName: string;
+  season: string;
+  values: number[];
+  color: string;
+  isAnchor: boolean;
+};
 
 /** `seed` arrives from Ask Full Court: the structured query it just ran, so
  *  "Open in Similarity" lands on the answer rather than an empty panel. */
@@ -24,6 +35,8 @@ export function Similar({ meta, seed }: { meta: Meta; seed?: any }) {
   const [sameSeason, setSameSeason] = useState(false);
   const [data, setData] = useState<any>(null);
   const [err, setErr] = useState<string | null>(null);
+  /** Keys of the seasons drawn on the radar, chosen from the result set. */
+  const [shown, setShown] = useState<string[]>([]);
 
   useEffect(() => {
     if (!seed) return;
@@ -67,20 +80,75 @@ export function Similar({ meta, seed }: { meta: Meta; seed?: any }) {
 
   const matches = data?.matches ?? [];
 
-  const radarTraces = useMemo(() => {
-    const series = data?.radar?.series ?? [];
+  /** Every season the overlay can draw — the anchor first, then the matches in
+   *  similarity order. Colors are pinned to this order so a season keeps its
+   *  color as the selection changes. */
+  const overlayRows: OverlayRow[] = useMemo(() => {
+    const series: any[] = data?.radar?.series ?? [];
     if (!series.length) return [];
-    const feats: string[] = data.radar.features.map(shortLabel);
-    return series.slice(0, 5).map((s: any, i: number) => ({
-      type: "scatterpolar",
-      name: s.name,
-      r: [...s.values, s.values[0]],
-      theta: [...feats, feats[0]],
-      fill: "toself",
-      opacity: i === 0 ? 0.55 : 0.22,
-      hovertemplate: `%{theta}: %{r:.0%}<extra>${s.name}</extra>`,
+    const source = [data.anchor, ...matches];
+    return series.map((s: any, i: number): OverlayRow => ({
+      key: rowKey(source[i]),
+      playerName: source[i].player_name as string,
+      season: String(source[i].season),
+      values: s.values as number[],
+      color: traceColor(i),
+      isAnchor: i === 0,
     }));
   }, [data]);
+
+  const anchorKey = data?.anchor ? rowKey(data.anchor) : null;
+  const shownAnchor = useRef<string | null>(null);
+
+  // The overlay starts as the chosen season alone — comparisons appear only
+  // when picked from the list. A new anchor clears them; changing k or the
+  // weighting only drops picks that fell out of the results, so hand-picked
+  // seasons survive a slider nudge.
+  useEffect(() => {
+    if (!anchorKey) {
+      shownAnchor.current = null;
+      setShown([]);
+      return;
+    }
+    if (shownAnchor.current !== anchorKey) {
+      shownAnchor.current = anchorKey;
+      setShown([anchorKey]);
+      return;
+    }
+    setShown((prev) => {
+      const valid = new Set(overlayRows.map((r) => r.key));
+      const kept = prev.filter((k) => valid.has(k));
+      return kept.length === prev.length ? prev : kept;
+    });
+  }, [overlayRows, anchorKey]);
+
+  const isShown = (key: string) => shown.includes(key);
+  /** The anchor is the baseline every comparison is drawn against, so it stays. */
+  const toggleShown = (key: string) => {
+    if (key === anchorKey) return;
+    setShown((prev) => (prev.includes(key) ? prev.filter((k) => k !== key) : [...prev, key]));
+  };
+
+  /** Rows actually on the radar, in similarity order. */
+  const shownRows = useMemo(
+    () => overlayRows.filter((r) => shown.includes(r.key)),
+    [overlayRows, shown]
+  );
+
+  const radarTraces = useMemo(() => {
+    if (!shownRows.length) return [];
+    const feats: string[] = data.radar.features.map(shortLabel);
+    return shownRows.map((r) => ({
+      type: "scatterpolar",
+      name: `${r.season} ${r.playerName}`,
+      r: [...r.values, r.values[0]],
+      theta: [...feats, feats[0]],
+      fill: "toself",
+      line: { color: r.color },
+      opacity: r.isAnchor ? 0.55 : 0.22,
+      hovertemplate: `%{theta}: %{r:.0%}<extra>${r.season} ${r.playerName}</extra>`,
+    }));
+  }, [data, shownRows]);
 
   return (
     <div className="space-y-4">
@@ -166,40 +234,63 @@ export function Similar({ meta, seed }: { meta: Meta; seed?: any }) {
         <Card className="lg:col-span-3">
           <CardHeader
             title="Most similar seasons"
+            subtitle={matches.length > 0 ? "Click a season to add or remove it from the overlay" : undefined}
           />
           <CardBody className="p-0">
             {matches.length === 0 ? (
               <div className="px-5 py-8 text-sm text-mute">Select a player and season.</div>
             ) : (
               <ul>
-                {matches.map((m: any) => (
-                  <li key={`${m.player_id}-${m.season}`} className="border-t border-border/60 px-5 py-3">
-                    <div className="flex items-start gap-3">
-                      {avatar(m.player_name, 34)}
-                      <div className="min-w-0 flex-1">
-                        <div className="flex items-baseline justify-between gap-3">
-                          <span className="truncate">
-                            {formatSeason(m.season, meta.season_format)} {m.player_name}
-                            <span className="ml-2 text-xs text-mute">{m.team}</span>
-                          </span>
-                          <span className="shrink-0 tabular-nums text-accent">
-                            {(m.similarity * 100).toFixed(1)}%
-                          </span>
-                        </div>
-                        <div className="mt-1 grid gap-x-6 gap-y-0.5 text-xs sm:grid-cols-2">
-                          <div className="text-mute">
-                            <span className="text-accent2">Most alike:</span>{" "}
-                            {m.most_similar.slice(0, 3).join(", ")}
+                {matches.map((m: any) => {
+                  const key = rowKey(m);
+                  const on = isShown(key);
+                  const color = overlayRows.find((r) => r.key === key)?.color;
+                  return (
+                    <li key={key} className="border-t border-border/60">
+                      <button
+                        type="button"
+                        onClick={() => toggleShown(key)}
+                        aria-pressed={on}
+                        title={on ? "Remove from the overlay" : "Add to the overlay"}
+                        className={cn(
+                          "flex w-full items-start gap-3 px-5 py-3 text-left transition hover:bg-border/25",
+                          on && "bg-border/15"
+                        )}
+                      >
+                        <span
+                          aria-hidden
+                          className={cn(
+                            "mt-2.5 h-3.5 w-3.5 shrink-0 border transition",
+                            on ? "border-transparent" : "border-border"
+                          )}
+                          style={on ? { background: color } : undefined}
+                        />
+                        {avatar(m.player_name, 34)}
+                        <div className="min-w-0 flex-1">
+                          <div className="flex items-baseline justify-between gap-3">
+                            <span className="truncate">
+                              {formatSeason(m.season, meta.season_format)} {m.player_name}
+                              <span className="ml-2 text-xs text-mute">{m.team}</span>
+                            </span>
+                            <span className="shrink-0 tabular-nums text-accent">
+                              {(m.similarity * 100).toFixed(1)}%
+                            </span>
                           </div>
-                          <div className="text-mute">
-                            <span className="text-bad">Biggest gap:</span>{" "}
-                            {m.biggest_difference.join(", ")}
+                          <div className="mt-1 grid gap-x-6 gap-y-0.5 text-xs sm:grid-cols-2">
+                            <div className="text-mute">
+                              <span className="text-accent2">Most alike:</span>{" "}
+                              {m.most_similar.slice(0, 3).join(", ")}
+                            </div>
+                            <div className="text-mute">
+                              <span className="text-bad">Biggest gap:</span>{" "}
+                              {m.biggest_difference.join(", ")}
+                            </div>
                           </div>
                         </div>
-                      </div>
-                    </div>
-                  </li>
-                ))}
+                      </button>
+                    </li>
+                  );
+                })}
               </ul>
             )}
           </CardBody>
@@ -208,15 +299,56 @@ export function Similar({ meta, seed }: { meta: Meta; seed?: any }) {
         <Card className="lg:col-span-2">
           <CardHeader
             title="Profile overlay"
+            right={
+              overlayRows.length > 0 ? (
+                <div className="flex shrink-0 items-center gap-3 text-xs">
+                  <button
+                    onClick={() => setShown(overlayRows.map((r) => r.key))}
+                    className="text-mute transition hover:text-ink"
+                  >
+                    All
+                  </button>
+                  <button
+                    onClick={() => setShown(anchorKey ? [anchorKey] : [])}
+                    className="text-mute transition hover:text-ink"
+                  >
+                    Clear
+                  </button>
+                </div>
+              ) : undefined
+            }
           />
           <CardBody>
-            {radarTraces.length > 0 && (
-              <PlayerLegend
-                names={(data?.radar?.series ?? []).slice(0, 5).map((s: any) => s.name)}
-                renderAvatar={(n, size) => avatar(n.split(" ").slice(1).join(" "), size)}
-                className="mb-2"
-                size={24}
-              />
+            {shownRows.length > 0 && (
+              <div className="mb-2 max-h-36 overflow-y-auto pr-1">
+                <div className="flex flex-wrap items-center gap-x-4 gap-y-2">
+                  {shownRows.map((r) => (
+                    <span key={r.key} className="flex max-w-full items-center gap-2 text-sm text-ink">
+                      <span className="relative">
+                        {avatar(r.playerName, 24)}
+                        <span
+                          aria-hidden
+                          className="absolute -bottom-0.5 -right-0.5 h-2.5 w-2.5 ring-2 ring-panel"
+                          style={{ background: r.color }}
+                        />
+                      </span>
+                      <span className="truncate">
+                        {formatSeason(r.season, meta.season_format)} {r.playerName}
+                      </span>
+                      {!r.isAnchor && (
+                        <button
+                          onClick={() => toggleShown(r.key)}
+                          title="Remove from the overlay"
+                          aria-label={`Remove ${r.playerName} from the overlay`}
+                          className="text-mute transition hover:text-ink"
+                        >
+                          ×
+                        </button>
+                      )}
+                    </span>
+                  ))}
+                </div>
+              </div>
             )}
             <Plot
               data={radarTraces as any}
@@ -257,6 +389,15 @@ export function Similar({ meta, seed }: { meta: Meta; seed?: any }) {
                       className={cn("border-t border-border/60", i === 0 && "bg-border/25")}
                     >
                       <td className="whitespace-nowrap px-4 py-2">
+                        <span
+                          aria-hidden
+                          className="mr-2 inline-block h-2 w-2 align-middle"
+                          style={{
+                            background: isShown(rowKey(r))
+                              ? overlayRows.find((o) => o.key === rowKey(r))?.color
+                              : "transparent",
+                          }}
+                        />
                         {formatSeason(r.season, meta.season_format)} {r.player_name}
                         {i === 0 && <span className="ml-2 text-xs text-accent">selected</span>}
                       </td>

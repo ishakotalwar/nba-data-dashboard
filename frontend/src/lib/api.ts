@@ -88,6 +88,25 @@ export const api = {
       body: JSON.stringify({ question, league }),
     }).then((r) => j<any>(r)),
 
+  /** Team power ratings, the Elo backtest and its calibration. */
+  predictTeams: (league: LeagueKey) =>
+    fetch(`${BASE}/predictions/teams?${q_(league)}`).then((r) => j<any>(r)),
+
+  predictMatchup: (home: string, away: string, league: LeagueKey) =>
+    fetch(`${BASE}/predictions/matchup`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ home, away, league }),
+    }).then((r) => j<any>(r)),
+
+  /** Projected leaderboard for next season, plus the projection's own error. */
+  predictPlayers: (league: LeagueKey, metric = "pts", limit = 25, order = "desc") =>
+    fetch(`${BASE}/predictions/players?${q_(league, { metric, limit: String(limit), order })}`)
+      .then((r) => j<any>(r)),
+
+  predictPlayer: (playerId: number, league: LeagueKey) =>
+    fetch(`${BASE}/predictions/player/${playerId}?${q_(league)}`).then((r) => j<any>(r)),
+
   askCapabilities: (league: LeagueKey) =>
     fetch(`${BASE}/ask/capabilities?${q_(league)}`).then((r) => j<any>(r)),
 

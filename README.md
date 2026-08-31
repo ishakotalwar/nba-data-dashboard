@@ -19,6 +19,8 @@ Everything is served from local Parquet, so no request touches the network.
 - **Historical similarity**: weighted cosine over every qualifying season, with explanations for *why* two seasons are alike
 - **Shot analysis** by zone, against the league average for the same season
 - **Stat explorer** for arbitrary filter stacks over the full history
+- **Two halves**: explore what happened, or what happens next — switchable from any page
+- **Predictions**: team Elo ratings and win probabilities, plus projected player lines, each shown against its own backtest
 - **Ask Full Court** — natural-language questions, answered from the data rather than from a model
 - **Light and dark themes**, remembered per browser
 - **Local Parquet API** — fast, offline, and immune to upstream rate limits
@@ -33,6 +35,8 @@ Everything is served from local Parquet, so no request touches the network.
 | **Shot Analysis** | Hexbin and scatter shot charts, zone-by-zone accuracy vs. the league, and two player-seasons compared |
 | **Teams** | League table, team profile over time, any two team-seasons head to head, and all-time leaderboards |
 | **Explorer** | Filter every player-season by any metric with `>`, `>=`, `<`, `<=`, `=` or `between`, then sort and page through the results |
+| **Predictions · Teams** | Elo power ratings, win probability and projected margin for any matchup, with accuracy, Brier score and a calibration curve |
+| **Predictions · Players** | Projected per-game line for next season — highest projected, biggest risers and fallers — with the seasons behind each number |
 | **Ask Full Court** | A question in plain English — “which players since 2010 averaged 25+ points?” — parsed into a structured query, executed against local Parquet, with a button that opens the answer in the matching page |
 
 ## Architecture
@@ -105,6 +109,44 @@ The original Streamlit prototype is still there: `streamlit run app.py`.
 is the file the deployment installs and serverless bundles are size-capped.
 `requirements-local.txt` pulls it in and adds Streamlit, Plotly, SciPy,
 scikit-learn and the ETL's dependencies.
+
+## Predictions
+
+The app opens on a choice — explore stats, or explore predictions — and the
+header switches between them from any page. Both halves cover the NBA and the
+WNBA.
+
+**Teams** use Elo: a home-court term, a margin-of-victory update, and a pull
+back toward the mean between seasons. Game results are rebuilt from the player
+game logs, which carry no score but do name both teams and mark the home side.
+
+| | NBA | WNBA |
+|---|---|---|
+| Games | 28,853 | 5,140 |
+| Accuracy | 65.5% | 65.8% |
+| Always pick home | 56.5% | 55.3% |
+| Brier | 0.216 (vs 0.246) | 0.217 (vs 0.247) |
+
+Scored from 2015 onward, each game predicted before it was played and before it
+updated the ratings. Accuracy alone flatters a model on a base rate this high,
+so Brier score, log loss and a calibration curve are shown alongside it.
+
+**Players** use a Marcel-style projection: recent seasons weighted 12/3/1 and by
+games played, regressed toward the league mean, then adjusted for age. The
+weights were fitted against held-out seasons rather than chosen by taste — a
+flatter blend loses to simply repeating last season for volume stats.
+
+| Metric | NBA MAE | vs "same as last season" | WNBA MAE | vs baseline |
+|---|---|---|---|---|
+| Points | 2.42 | +4.4% | 2.53 | +6.8% |
+| Rebounds | 0.84 | +6.1% | 0.94 | +11.7% |
+| Assists | 0.66 | +5.5% | 0.67 | +8.7% |
+| True shooting % | 0.037 | +15.2% | 0.043 | +16.5% |
+
+Two data details the models depend on, both in `backend/leagues.py`:
+franchises that changed abbreviation (`SEA`→`OKC`, `SAS`→`SA`→`LV`, and six more
+in the WNBA) are folded onto one identity so a rating is not split in half, and
+only a league whose season crosses New Year is labelled by the year it ends in.
 
 ## Ask Full Court
 

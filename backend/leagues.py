@@ -39,6 +39,10 @@ class League:
             return None
         return year - 1 if self.season_start_month >= 7 else year
 
+    def canonical_team(self, abbr: str) -> str:
+        """Today's abbreviation for a franchise that used to use another."""
+        return TEAM_ALIASES.get(self.key, {}).get(str(abbr), str(abbr))
+
     def display_season(self, season: str) -> str:
         """Stored season label -> label for humans.
 
@@ -64,6 +68,26 @@ WNBA = League(
     key="wnba", league_id="10", label="WNBA", season_format="year", suffix="_wnba",
     season_start_month=5, three_point_arc=221.5, three_point_corner=216.5,
 )
+
+# A franchise whose abbreviation changed in the source data — through
+# relocation, a rebrand, or simple inconsistency across eras — is still one
+# franchise. Without this its history splits in two and anything cumulative
+# (an Elo rating, say) starts over. Keyed to the abbreviation used today.
+TEAM_ALIASES: dict[str, dict[str, str]] = {
+    "nba": {
+        "SEA": "OKC",   # SuperSonics -> Thunder, 2008
+        "NJ": "BKN",    # New Jersey -> Brooklyn Nets, 2012
+    },
+    "wnba": {
+        "CT": "CON", "CONN": "CON",  # Connecticut Sun, three spellings
+        "LOS": "LA",                 # Los Angeles Sparks
+        "NYL": "NY",                 # New York Liberty
+        "PHO": "PHX",                # Phoenix Mercury
+        "WAS": "WSH",                # Washington Mystics
+        "SAS": "LV", "SA": "LV",     # San Antonio Stars -> Las Vegas Aces, 2018
+        "TUL": "DAL",                # Tulsa Shock -> Dallas Wings, 2016
+    },
+}
 
 LEAGUES: dict[str, League] = {lg.key: lg for lg in (NBA, WNBA)}
 DEFAULT = NBA
