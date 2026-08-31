@@ -1,0 +1,14 @@
+# Full local environment: the backend runtime set plus everything the
+# Streamlit prototype (app.py) and the ETL (etl/) need. Not installed on
+# Vercel — see requirements.txt for why that one stays small.
+-r requirements.txt
+
+streamlit
+plotly
+scipy
+scikit-learn
+nba_api
+requests
+duckdb
+uvicorn[standard]
+pyarrow

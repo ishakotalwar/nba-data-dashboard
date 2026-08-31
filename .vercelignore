@@ -13,8 +13,8 @@ __pycache__/
 /app.py
 /docs/
 
-# Deployment installs api/requirements.txt. Hiding the ROOT file keeps the
-# Streamlit-only deps (streamlit, plotly, duckdb, nba_api) out of the bundle.
-# The leading slash is essential: a bare `requirements.txt` would also match
-# api/requirements.txt and ship the function with no dependencies at all.
-/requirements.txt
+# NOTE: requirements.txt must NOT be ignored — Vercel's Python builder installs
+# it from the project root, and hiding it shipped the function with no
+# dependencies at all. The Streamlit-only extras live in requirements-local.txt,
+# which is ignored here instead.
+/requirements-local.txt

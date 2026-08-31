@@ -72,7 +72,7 @@ cd nba-data-dashboard
 
 python -m venv venv
 source venv/bin/activate
-pip install -r requirements.txt
+pip install -r requirements-local.txt   # backend + Streamlit prototype + ETL
 
 python etl/sdv_etl.py --league nba      # 2003-present
 python etl/sdv_etl.py --league wnba
@@ -95,6 +95,11 @@ npm run dev
 Open <http://localhost:5173>. Vite proxies `/api/*` to the backend on :8000.
 
 The original Streamlit prototype is still there: `streamlit run app.py`.
+
+`requirements.txt` holds only what the FastAPI backend imports, because that
+is the file the deployment installs and serverless bundles are size-capped.
+`requirements-local.txt` pulls it in and adds Streamlit, Plotly, SciPy,
+scikit-learn and the ETL's dependencies.
 
 ## Data Pipeline
 

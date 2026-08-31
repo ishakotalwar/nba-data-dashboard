@@ -1,12 +1,15 @@
-# Deployment-only dependency set, deliberately smaller than the root
-# requirements.txt: Vercel caps a function at 250 MB unzipped, and
-# pyarrow + scipy + sklearn alone are ~257 MB of that.
+# Mirror of the root requirements.txt, kept here because Vercel's Python
+# builder has been observed installing only the root file. Keep the two in
+# sync. Contents are kept to what `backend/` actually imports:
 #
-#   scipy    -> np.histogram2d in routers/shots.py
-#   sklearn  -> manual z-score in routers/similarity.py
-#   pyarrow  -> fastparquet (10 MB vs 112 MB) for pandas.read_parquet
+#   fastapi, pydantic  - the app and its request models
+#   pandas, numpy      - all of the analytics
+#   fastparquet        - pandas.read_parquet engine (10 MB; pyarrow is 112 MB
+#                        and the function bundle is capped at 250 MB unzipped)
+#   tenacity           - retry decorators in backend/live.py
 #
-# streamlit/plotly/duckdb/nba_api are not imported by the API at all.
+# For the Streamlit prototype and the ETL, install requirements-local.txt
+# instead — it pulls this file in and adds the heavier extras.
 fastapi
 pydantic
 pandas

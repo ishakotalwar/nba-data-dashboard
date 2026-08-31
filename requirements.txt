@@ -1,13 +1,17 @@
-streamlit
+# Runtime dependencies for the FastAPI backend. This file is what Vercel
+# installs, so it is kept to what `backend/` actually imports:
+#
+#   fastapi, pydantic  - the app and its request models
+#   pandas, numpy      - all of the analytics
+#   fastparquet        - pandas.read_parquet engine (10 MB; pyarrow is 112 MB
+#                        and the function bundle is capped at 250 MB unzipped)
+#   tenacity           - retry decorators in backend/live.py
+#
+# For the Streamlit prototype and the ETL, install requirements-local.txt
+# instead — it pulls this file in and adds the heavier extras.
 fastapi
-uvicorn[standard]
+pydantic
 pandas
 numpy
-scikit-learn
-scipy
-duckdb
-pyarrow
-plotly
-nba_api
+fastparquet
 tenacity
-pydantic
