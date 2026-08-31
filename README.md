@@ -1,5 +1,7 @@
 # Full Court
 
+**Live: <https://full-court-six.vercel.app>**
+
 ![Player overview](docs/screenshot.png)
 
 An analytics app for the **NBA and WNBA**, covering 2003 to the present. It is built
@@ -60,15 +62,15 @@ Three rules keep it from sprawling:
 
 ## Tech Stack
 
-- **Backend**: FastAPI, pandas, scikit-learn, scipy
+- **Backend**: FastAPI, pandas, NumPy
 - **Frontend**: Vite, React, TypeScript, Tailwind, Radix UI, Plotly.js
 - **Data**: Parquet on disk, built by a Python ETL from [sportsdataverse](https://github.com/sportsdataverse)
 
 ## Setup
 
 ```bash
-git clone https://github.com/ishakotalwar/nba-data-dashboard.git
-cd nba-data-dashboard
+git clone https://github.com/ishakotalwar/full-court.git
+cd full-court
 
 python -m venv venv
 source venv/bin/activate
@@ -100,6 +102,26 @@ The original Streamlit prototype is still there: `streamlit run app.py`.
 is the file the deployment installs and serverless bundles are size-capped.
 `requirements-local.txt` pulls it in and adds Streamlit, Plotly, SciPy,
 scikit-learn and the ETL's dependencies.
+
+## Deployment
+
+Deployed on Vercel as one project: the Vite build is the static site, and
+`api/index.py` exposes the FastAPI app as a Python serverless function.
+`vercel.json` serves the built files first and sends `/api/*` to the function.
+
+Two constraints shape the setup:
+
+- **The project's Framework Preset must be Vite, not FastAPI.** The FastAPI
+  preset routes every request to the Python function, so the built frontend
+  never gets served.
+- **A serverless function is capped at 250 MB unzipped.** pyarrow, SciPy and
+  scikit-learn together are more than that, so the backend uses NumPy in place
+  of the two SciPy/scikit-learn call sites it had, and fastparquet (10 MB) in
+  place of pyarrow (112 MB). That is why `requirements.txt` is deliberately
+  small — Vercel installs it from the repository root.
+
+The Parquet in `data/` is committed and ships with the deployment via
+`includeFiles` in `vercel.json`, so the API has its data with no external calls.
 
 ## Data Pipeline
 
@@ -142,7 +164,7 @@ figures. See the note on blocking below.
 | Shot locations | 1,171,163 (2022–2026) | 188,088 (2022–2026) |
 | Game rows | 659,034 | 106,895 |
 
-Roughly 12 MB of Parquet in total.
+Roughly 13 MB of Parquet in total.
 
 ## Technical Notes / Limitations
 

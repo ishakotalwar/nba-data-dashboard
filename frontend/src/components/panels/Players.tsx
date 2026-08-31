@@ -112,7 +112,10 @@ export function Players({ meta }: { meta: Meta }) {
                 {info?.bio?.position && <span>· {info.bio.position}</span>}
                 {info?.bio?.height && <span>· {info.bio.height}</span>}
                 {info?.bio?.weight && <span>· {info.bio.weight}</span>}
-                {info?.bio?.age != null && <span>· age {info.bio.age}</span>}
+                {/* age during the selected season, falling back to age today */}
+                {(season?.bio?.age ?? info?.bio?.age) != null && (
+                  <span>· age {season?.bio?.age ?? info?.bio?.age}</span>
+                )}
                 {info?.bio?.birthplace && <span>· {info.bio.birthplace}</span>}
               </div>
               {season && (

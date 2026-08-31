@@ -20,7 +20,22 @@ def _player_rows(lg, player_id: int) -> pd.DataFrame:
     return rows.sort_values("season")
 
 
-def _bio(lg, player_id: int) -> dict:
+def _season_start(lg, season: str) -> pd.Timestamp | None:
+    """First day of `season` for this league.
+
+    A season that tips off in the second half of the calendar year is labelled
+    by the year it finishes in (NBA: `2016` began October 2015); one that runs
+    inside a single year is labelled by that year (WNBA: `2016` began May 2016).
+    """
+    try:
+        year = int(str(season)[:4])
+    except (TypeError, ValueError):
+        return None
+    start_year = year - 1 if lg.season_start_month >= 7 else year
+    return pd.Timestamp(year=start_year, month=lg.season_start_month, day=1)
+
+
+def _bio(lg, player_id: int, season: str | None = None) -> dict:
     df = data._load_optional("player_bio", lg)
     if df is None:
         return {}
@@ -39,7 +54,12 @@ def _bio(lg, player_id: int) -> dict:
         ) or None,
     }
     if pd.notna(bd):
-        out["age"] = int((pd.Timestamp.today() - bd).days // 365.25)
+        # Age during the season being viewed, not age today — otherwise every
+        # historical season reports the player's present-day age.
+        asof = _season_start(lg, season) if season else None
+        age = int(((asof if asof is not None else pd.Timestamp.today()) - bd).days // 365.25)
+        if age >= 0:
+            out["age"] = age
     return out
 
 
@@ -109,7 +129,7 @@ def player_season(player_id: int, season: str, league: str | None = None):
         "gp": r.get("gp"),
         "min": r.get("min"),
         "pool_size": int(len(pool)),
-        "bio": _bio(lg, player_id),
+        "bio": _bio(lg, player_id, str(season)),
         "stats": stats,
     })
 
