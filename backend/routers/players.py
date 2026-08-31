@@ -27,11 +27,9 @@ def _season_start(lg, season: str) -> pd.Timestamp | None:
     by the year it finishes in (NBA: `2016` began October 2015); one that runs
     inside a single year is labelled by that year (WNBA: `2016` began May 2016).
     """
-    try:
-        year = int(str(season)[:4])
-    except (TypeError, ValueError):
+    start_year = lg.season_start_year(season)
+    if start_year is None:
         return None
-    start_year = year - 1 if lg.season_start_month >= 7 else year
     return pd.Timestamp(year=start_year, month=lg.season_start_month, day=1)
 
 

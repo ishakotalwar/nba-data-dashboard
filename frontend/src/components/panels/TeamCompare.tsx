@@ -4,6 +4,7 @@ import { Card, CardBody, CardHeader } from "@/components/ui/Card";
 import { Select } from "@/components/ui/Select";
 import { Plot } from "@/components/ui/Plot";
 import { cn } from "@/lib/cn";
+import { formatSeason } from "@/lib/season";
 
 // Net rating is polarity data (better/worse than break-even), so it gets a
 // diverging scale: two poles through a neutral grey midpoint, centered on 0.
@@ -152,7 +153,12 @@ export function TeamCompare({ meta }: { meta: Meta }) {
           <div className="grid gap-3 md:grid-cols-3">
             <div>
               <div className="label mb-1.5">Season</div>
-              <Select value={season} onChange={setSeason} options={meta.seasons} placeholder="Select" />
+              <Select
+                value={season}
+                onChange={setSeason}
+                options={meta.seasons.map((s) => ({ value: s, label: formatSeason(s, meta.season_format) }))}
+                placeholder="Select"
+              />
             </div>
           </div>
           {err && <div className="mt-3 text-sm text-bad">{err}</div>}
@@ -161,7 +167,7 @@ export function TeamCompare({ meta }: { meta: Meta }) {
 
       <Card>
         <CardHeader
-          title={season ? `Offense vs. defense — ${season}` : "Offense vs. defense"}
+          title={season ? `Offense vs. defense — ${formatSeason(season, meta.season_format)}` : "Offense vs. defense"}
         />
         <CardBody>
           <Plot data={traces as any} layout={layout} height={480} placeholder="Select a season" />
@@ -170,7 +176,7 @@ export function TeamCompare({ meta }: { meta: Meta }) {
 
       <Card>
         <CardHeader
-          title={season ? `League table — ${season}` : "League table"}
+          title={season ? `League table — ${formatSeason(season, meta.season_format)}` : "League table"}
         />
         <CardBody className="p-0">
           {sorted.length === 0 ? (

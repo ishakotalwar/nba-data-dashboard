@@ -3,6 +3,7 @@ import { api, type Meta } from "@/lib/api";
 import { Card, CardBody, CardHeader } from "@/components/ui/Card";
 import { Select } from "@/components/ui/Select";
 import { Plot } from "@/components/ui/Plot";
+import { formatSeason } from "@/lib/season";
 
 export function Teams({ meta }: { meta: Meta }) {
   const [team, setTeam] = useState("");
@@ -26,7 +27,7 @@ export function Teams({ meta }: { meta: Meta }) {
 
   const ratingTrace = useMemo(() => {
     if (!series?.rows) return [];
-    const seasons = series.rows.map((r: any) => r.season);
+    const seasons = series.rows.map((r: any) => formatSeason(r.season, meta.season_format));
     return [
       { type: "scatter", mode: "lines+markers", name: "Offensive rating",
         x: seasons, y: series.rows.map((r: any) => r.ortg) },
@@ -43,7 +44,7 @@ export function Teams({ meta }: { meta: Meta }) {
       {
         type: "bar",
         name: "Net rating",
-        x: series.rows.map((r: any) => r.season),
+        x: series.rows.map((r: any) => formatSeason(r.season, meta.season_format)),
         y: series.rows.map((r: any) =>
           r.ortg != null && r.drtg != null ? +(r.ortg - r.drtg).toFixed(1) : null
         ),
@@ -60,7 +61,7 @@ export function Teams({ meta }: { meta: Meta }) {
     if (!series?.rows) return [];
     return [
       { type: "scatter", mode: "lines+markers", name: "Pace",
-        x: series.rows.map((r: any) => r.season),
+        x: series.rows.map((r: any) => formatSeason(r.season, meta.season_format)),
         y: series.rows.map((r: any) => r.pace) },
     ];
   }, [series]);
@@ -90,7 +91,8 @@ export function Teams({ meta }: { meta: Meta }) {
     ];
   }, [factors, team]);
 
-  const seasonOptions = series?.rows?.map((r: any) => r.season) ?? [];
+  const seasonOptions =
+    series?.rows?.map((r: any) => ({ value: r.season, label: formatSeason(r.season, meta.season_format) })) ?? [];
 
   return (
     <div className="space-y-4">
@@ -163,7 +165,7 @@ export function Teams({ meta }: { meta: Meta }) {
 
       <Card>
         <CardHeader
-          title={season ? `Four Factors — ${team}, ${season}` : "Four Factors"}
+          title={season ? `Four Factors — ${team}, ${formatSeason(season, meta.season_format)}` : "Four Factors"}
         />
         <CardBody>
           <Plot

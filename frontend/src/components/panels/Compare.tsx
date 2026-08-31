@@ -9,6 +9,7 @@ import { PlayerLegend } from "@/components/ui/PlayerLegend";
 import { playerAvatar } from "@/components/ui/Avatar";
 import { formatDelta, formatValue, label, ordinal, shortLabel, sortMetrics } from "@/lib/metrics";
 import { cn } from "@/lib/cn";
+import { formatSeason } from "@/lib/season";
 
 const MODES = [
   { v: "season", label: "Single season" },
@@ -91,7 +92,7 @@ export function Compare({ meta }: { meta: Meta }) {
       type: "scatter",
       mode: "lines+markers",
       name: c.player_name,
-      x: c.points.map((p: any) => (useAge ? p.age : p.season)),
+      x: c.points.map((p: any) => (useAge ? p.age : formatSeason(p.season, meta.season_format))),
       y: c.points.map((p: any) => p[careerMetric]),
       hovertemplate: `${useAge ? "age %{x}" : "%{x}"}: %{y}<extra>${"%{fullData.name}"}</extra>`,
     }));

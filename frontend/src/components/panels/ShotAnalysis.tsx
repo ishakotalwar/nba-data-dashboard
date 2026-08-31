@@ -6,6 +6,7 @@ import { PlayerSeasonSelector, emptySelection } from "@/components/ui/PlayerSeas
 import { playerAvatar } from "@/components/ui/Avatar";
 import { buildCourtShapes, courtAxis } from "@/lib/court";
 import { cn } from "@/lib/cn";
+import { formatSeason } from "@/lib/season";
 
 const pct = (v: number | null | undefined) => (v == null ? "—" : `${(v * 100).toFixed(1)}%`);
 const signed = (v: number | null | undefined) =>
@@ -173,7 +174,7 @@ export function ShotAnalysis({ meta }: { meta: Meta }) {
         <Card>
           <CardHeader
             lead={a.playerName ? avatar(a.playerName, 40) : undefined}
-            title={zonesA ? `${zonesA.season} ${zonesA.player_name}` : "—"}
+            title={zonesA ? `${formatSeason(zonesA.season, meta.season_format)} ${zonesA.player_name}` : "—"}
             subtitle={
               zonesA ? `${zonesA.total_fga} field goal attempts · ${pct(zonesA.fg_pct)} overall` : undefined
             }
@@ -187,7 +188,7 @@ export function ShotAnalysis({ meta }: { meta: Meta }) {
           <Card>
             <CardHeader
               lead={b.playerName ? avatar(b.playerName, 40) : undefined}
-              title={zonesB ? `${zonesB.season} ${zonesB.player_name}` : "—"}
+              title={zonesB ? `${formatSeason(zonesB.season, meta.season_format)} ${zonesB.player_name}` : "—"}
               subtitle={
                 zonesB ? `${zonesB.total_fga} field goal attempts · ${pct(zonesB.fg_pct)} overall` : " "
               }

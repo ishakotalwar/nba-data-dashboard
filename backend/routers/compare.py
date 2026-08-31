@@ -26,8 +26,8 @@ class CompareRequest(BaseModel):
     mode: str = "season"  # "season" | "career"
 
 
-def _label(name: str, season: str) -> str:
-    return f"{season} {name}"
+def _label(lg, name: str, season: str) -> str:
+    return f"{lg.display_season(season)} {name}"
 
 
 @router.post("/compare")
@@ -63,7 +63,7 @@ def _single_season(lg, df: pd.DataFrame, selections: list[Selection], mets: list
             continue
         r = row.iloc[0]
         name = str(r["player_name"])
-        key = _label(name, str(season))
+        key = _label(lg, name, str(season))
 
         pool = analytics.gp_filtered_pool(analytics.season_pool(lg, season))
         if season not in league_avg:
@@ -115,12 +115,10 @@ def _career(lg, df: pd.DataFrame, selections: list[Selection], mets: list[str]) 
             season = str(r["season"])
             age = None
             if bd is not None and pd.notna(bd):
-                try:
-                    start = pd.Timestamp(year=int(season.split("-")[0]),
-                                         month=lg.season_start_month, day=1)
+                start_year = lg.season_start_year(season)
+                if start_year is not None:
+                    start = pd.Timestamp(year=start_year, month=lg.season_start_month, day=1)
                     age = round((start - bd).days / 365.25, 2)
-                except Exception:
-                    age = None
             point = {"season": season, "age": age, "team": r.get("team_abbr"), "gp": r.get("gp")}
             for m in mets:
                 v = pd.to_numeric(pd.Series([r.get(m)]), errors="coerce").iloc[0]

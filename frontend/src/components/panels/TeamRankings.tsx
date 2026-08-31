@@ -2,6 +2,7 @@ import { useEffect, useState } from "react";
 import { api, type Meta } from "@/lib/api";
 import { Card, CardBody, CardHeader } from "@/components/ui/Card";
 import { Select } from "@/components/ui/Select";
+import { formatSeason } from "@/lib/season";
 
 const METRICS = [
   { value: "net", label: "Net rating" },
@@ -34,7 +35,7 @@ export function TeamRankings({ meta }: { meta: Meta }) {
 
   const rows = data?.rows ?? [];
   const span = meta.seasons.length
-    ? `${meta.seasons[0]}–${meta.seasons[meta.seasons.length - 1]}`
+    ? `${formatSeason(meta.seasons[0], meta.season_format)}–${formatSeason(meta.seasons[meta.seasons.length - 1], meta.season_format)}`
     : "";
 
   return (
@@ -70,7 +71,7 @@ export function TeamRankings({ meta }: { meta: Meta }) {
                   <tr key={`${r.team}-${r.season}`} className="border-t border-border/60">
                     <td className="px-4 py-2 text-mute tabular-nums">{i + 1}</td>
                     <td className="whitespace-nowrap px-3 py-2">
-                      {r.season} {r.team}
+                      {formatSeason(r.season, meta.season_format)} {r.team}
                     </td>
                     <td className="px-3 py-2 text-right tabular-nums text-accent">
                       {fmt(metric, r[metric])}

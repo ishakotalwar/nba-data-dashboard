@@ -3,6 +3,7 @@ import { api, type Meta, type PlayerInfo, type PlayerSeason } from "@/lib/api";
 import { PlayerCombobox } from "./PlayerCombobox";
 import { Select } from "./Select";
 import { playerAvatar } from "./Avatar";
+import { formatSeason } from "@/lib/season";
 
 type Props = {
   meta: Meta;
@@ -82,7 +83,10 @@ export function PlayerSeasonSelector({
           <Select
             value={value.season}
             onChange={(s) => onChange({ ...value, season: s })}
-            options={info?.seasons ?? []}
+            options={(info?.seasons ?? []).map((s) => ({
+              value: s,
+              label: formatSeason(s, meta.season_format),
+            }))}
             placeholder={value.playerName ? "Select" : "Pick a player first"}
           />
         </div>

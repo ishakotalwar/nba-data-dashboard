@@ -8,6 +8,7 @@ import { PlayerLegend } from "@/components/ui/PlayerLegend";
 import { playerAvatar } from "@/components/ui/Avatar";
 import { formatValue, shortLabel } from "@/lib/metrics";
 import { cn } from "@/lib/cn";
+import { formatSeason } from "@/lib/season";
 
 const PRESETS = ["Overall", "Scoring", "Shooting", "Playmaking", "Defense", "Custom"];
 
@@ -162,7 +163,7 @@ export function Similar({ meta }: { meta: Meta }) {
                       <div className="min-w-0 flex-1">
                         <div className="flex items-baseline justify-between gap-3">
                           <span className="truncate">
-                            {m.season} {m.player_name}
+                            {formatSeason(m.season, meta.season_format)} {m.player_name}
                             <span className="ml-2 text-xs text-mute">{m.team}</span>
                           </span>
                           <span className="shrink-0 tabular-nums text-accent">
@@ -240,7 +241,7 @@ export function Similar({ meta }: { meta: Meta }) {
                       className={cn("border-t border-border/60", i === 0 && "bg-border/25")}
                     >
                       <td className="whitespace-nowrap px-4 py-2">
-                        {r.season} {r.player_name}
+                        {formatSeason(r.season, meta.season_format)} {r.player_name}
                         {i === 0 && <span className="ml-2 text-xs text-accent">selected</span>}
                       </td>
                       {features.map((f) => (

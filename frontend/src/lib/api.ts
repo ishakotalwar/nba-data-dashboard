@@ -47,6 +47,8 @@ export type LeagueInfo = {
 export type Meta = {
   league: LeagueKey;
   league_label: string;
+  /** How to render a stored season label; see lib/season.ts. */
+  season_format?: "range" | "year";
   players: string[];
   /** player_name -> ESPN athlete id, used to build headshot URLs. */
   player_ids: Record<string, number>;

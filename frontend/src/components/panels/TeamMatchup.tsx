@@ -4,6 +4,7 @@ import { Card, CardBody, CardHeader } from "@/components/ui/Card";
 import { Select } from "@/components/ui/Select";
 import { Plot } from "@/components/ui/Plot";
 import { cn } from "@/lib/cn";
+import { formatSeason } from "@/lib/season";
 
 type Pick = { team: string; season: string };
 
@@ -46,14 +47,14 @@ export function TeamMatchup({ meta }: { meta: Meta }) {
     ? ["eFG%", "TOV%", "ORB%", "FT rate"].length && [
         {
           type: "bar",
-          name: `${data.a.season} ${data.a.team}`,
+          name: `${formatSeason(data.a.season, meta.season_format)} ${data.a.team}`,
           x: ["eFG%", "TOV%", "ORB%", "FT rate"],
           y: ["eFG%", "TOV%", "ORB%", "FT rate"].map((k) => data.a.values[k]),
           marker: { color: "#ff6a3d" },
         },
         {
           type: "bar",
-          name: `${data.b.season} ${data.b.team}`,
+          name: `${formatSeason(data.b.season, meta.season_format)} ${data.b.team}`,
           x: ["eFG%", "TOV%", "ORB%", "FT rate"],
           y: ["eFG%", "TOV%", "ORB%", "FT rate"].map((k) => data.b.values[k]),
           marker: { color: "#4dabff" },
@@ -69,7 +70,12 @@ export function TeamMatchup({ meta }: { meta: Meta }) {
       </div>
       <div>
         <div className="label mb-1.5">Season</div>
-        <Select value={p.season} onChange={(v) => set({ ...p, season: v })} options={meta.seasons} placeholder="Select" />
+        <Select
+          value={p.season}
+          onChange={(v) => set({ ...p, season: v })}
+          options={meta.seasons.map((s) => ({ value: s, label: formatSeason(s, meta.season_format) }))}
+          placeholder="Select"
+        />
       </div>
     </div>
   );
@@ -97,10 +103,10 @@ export function TeamMatchup({ meta }: { meta: Meta }) {
                   <tr className="text-left text-xs uppercase tracking-wider text-mute">
                     <th className="px-4 py-2 font-medium">Metric</th>
                     <th className="px-3 py-2 text-right font-medium">
-                      {data.a.season} {data.a.team}
+                      {formatSeason(data.a.season, meta.season_format)} {data.a.team}
                     </th>
                     <th className="px-4 py-2 text-right font-medium">
-                      {data.b.season} {data.b.team}
+                      {formatSeason(data.b.season, meta.season_format)} {data.b.team}
                     </th>
                   </tr>
                 </thead>

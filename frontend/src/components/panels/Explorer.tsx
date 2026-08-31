@@ -5,6 +5,7 @@ import { Select } from "@/components/ui/Select";
 import { playerAvatar } from "@/components/ui/Avatar";
 import { formatValue, label, shortLabel, sortMetrics } from "@/lib/metrics";
 import { cn } from "@/lib/cn";
+import { formatSeason } from "@/lib/season";
 
 type Filt = { metric: string; op: string; value: number; value2?: number };
 
@@ -20,6 +21,7 @@ const OPS = [
 export function Explorer({ meta }: { meta: Meta }) {
   const avatar = playerAvatar(meta);
   const seasons = meta.seasons;
+  const seasonOptions = seasons.map((s) => ({ value: s, label: formatSeason(s, meta.season_format) }));
   const metricKeys = sortMetrics(meta.metrics);
 
   const [from, setFrom] = useState(seasons[0] ?? "");
@@ -88,11 +90,11 @@ export function Explorer({ meta }: { meta: Meta }) {
           <div className="grid gap-3 md:grid-cols-3 lg:grid-cols-6">
             <div>
               <div className="label mb-1.5">Season from</div>
-              <Select value={from} onChange={setFrom} options={seasons} />
+              <Select value={from} onChange={setFrom} options={seasonOptions} />
             </div>
             <div>
               <div className="label mb-1.5">to</div>
-              <Select value={to} onChange={setTo} options={seasons} />
+              <Select value={to} onChange={setTo} options={seasonOptions} />
             </div>
             <div>
               <div className="label mb-1.5">Min games</div>
@@ -246,7 +248,9 @@ export function Explorer({ meta }: { meta: Meta }) {
                               {avatar(r.player_name, 24)}
                               {r.player_name}
                             </span>
-                          ) : c === "season" || c === "team_abbr" ? (
+                          ) : c === "season" ? (
+                            formatSeason(r[c], meta.season_format) || "—"
+                          ) : c === "team_abbr" ? (
                             r[c] ?? "—"
                           ) : (
                             formatValue(c, r[c])

@@ -7,6 +7,7 @@ import { Avatar } from "@/components/ui/Avatar";
 import { PlayerSeasonSelector, emptySelection } from "@/components/ui/PlayerSeasonSelector";
 import { formatValue, label, ordinal, shortLabel, sortMetrics } from "@/lib/metrics";
 import { cn } from "@/lib/cn";
+import { formatSeason } from "@/lib/season";
 
 /** Percentile → color. Deliberately three steps, not a gradient: the point is
  *  "clearly above / around / clearly below average", not a precise reading. */
@@ -58,7 +59,7 @@ export function Players({ meta }: { meta: Meta }) {
         type: "scatter",
         mode: "lines+markers",
         name: shortLabel(trendMetric),
-        x: rows.map((r: any) => r.season),
+        x: rows.map((r: any) => formatSeason(r.season, meta.season_format)),
         y: rows.map((r: any) => r[trendMetric]),
         hovertemplate: `%{x}: %{y}<extra>${label(trendMetric)}</extra>`,
       },
@@ -107,7 +108,7 @@ export function Players({ meta }: { meta: Meta }) {
                 {sel.playerName || "Select a player"}
               </div>
               <div className="mt-1 flex flex-wrap gap-x-3 gap-y-1 text-sm text-mute">
-                {season?.season && <span>{season.season}</span>}
+                {season?.season && <span>{formatSeason(season.season, meta.season_format)}</span>}
                 {season?.team && <span>· {season.team}</span>}
                 {info?.bio?.position && <span>· {info.bio.position}</span>}
                 {info?.bio?.height && <span>· {info.bio.height}</span>}

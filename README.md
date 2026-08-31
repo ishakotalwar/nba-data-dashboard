@@ -187,9 +187,13 @@ resolve them.
 **Season labels mean different things per league.** Both use a plain year, but an NBA
 season is named for the year it *ends*:
 
-| Label | NBA | WNBA |
+| Stored label | NBA | WNBA |
 |---|---|---|
 | `2024` | the 2023-24 season (Oct 2023 – Apr 2024) | the 2024 season (May – Sep 2024) |
+
+The stored label is what the API accepts and returns. The UI renders it through
+`frontend/src/lib/season.ts` using the `season_format` reported by `/api/meta`,
+so an NBA season shows as `2023-24` and a WNBA season as `2024`.
 
 **ESPN data quirks the ETL handles:**
 

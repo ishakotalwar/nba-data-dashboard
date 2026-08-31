@@ -27,6 +27,33 @@ class League:
             return str(start_year)
         return f"{start_year}-{str(start_year + 1)[-2:]}"
 
+    def season_start_year(self, season: str) -> int | None:
+        """Calendar year in which `season` tipped off.
+
+        A league whose season begins in the second half of the year is
+        labelled by the year it finishes in, so it started the year before.
+        """
+        try:
+            year = int(str(season)[:4])
+        except (TypeError, ValueError):
+            return None
+        return year - 1 if self.season_start_month >= 7 else year
+
+    def display_season(self, season: str) -> str:
+        """Stored season label -> label for humans.
+
+        Stored labels are a plain year: the year the season *ends* for a
+        "range" league (NBA `2026` ran Oct 2025 - Apr 2026, shown as 2025-26),
+        and the season's own year for a "year" league (WNBA `2026`).
+        """
+        if self.season_format == "year":
+            return str(season)
+        try:
+            end_year = int(str(season)[:4])
+        except (TypeError, ValueError):
+            return str(season)
+        return f"{end_year - 1}-{str(end_year)[-2:]}"
+
 
 NBA = League(
     key="nba", league_id="00", label="NBA", season_format="range", suffix="_nba",

@@ -31,6 +31,7 @@ def meta(league: str | None = None):
     return {
         "league": lg.key,
         "league_label": lg.label,
+        "season_format": lg.season_format,
         "players": data.player_names(lg),
         "player_ids": data.player_ids(lg),
         "teams": data.team_names(lg),

@@ -8,6 +8,7 @@ import { Similar } from "./components/panels/Similar";
 import { TeamsSection } from "./components/panels/TeamsSection";
 import { Explorer } from "./components/panels/Explorer";
 import { ShotAnalysis } from "./components/panels/ShotAnalysis";
+import { formatSeason } from "@/lib/season";
 
 /** One flat nav. `group` only draws a separator — it is not a second click. */
 const TABS = [
@@ -59,8 +60,11 @@ export default function App() {
               <div className="text-xs text-mute">
                 {meta.players.length.toLocaleString()} players ·{" "}
                 {meta.seasons.length > 1
-                  ? `${meta.seasons[0]}–${meta.seasons[meta.seasons.length - 1]}`
-                  : meta.seasons[0]}
+                  ? `${formatSeason(meta.seasons[0], meta.season_format)}–${formatSeason(
+                      meta.seasons[meta.seasons.length - 1],
+                      meta.season_format
+                    )}`
+                  : formatSeason(meta.seasons[0], meta.season_format)}
               </div>
             </div>
           </div>
