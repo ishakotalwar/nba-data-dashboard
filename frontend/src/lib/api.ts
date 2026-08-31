@@ -96,6 +96,10 @@ export const api = {
   predictSchedule: (league: LeagueKey, date: string) =>
     fetch(`${BASE}/predictions/schedule?${q_(league, { date })}`).then((r) => j<any>(r)),
 
+  /** One game: the Elo read, plus a projected line for every rotation player. */
+  predictGame: (league: LeagueKey, gameId: string) =>
+    fetch(`${BASE}/predictions/game/${gameId}?${q_(league)}`).then((r) => j<any>(r)),
+
   /** Team power ratings, the Elo backtest and its calibration. */
   predictTeams: (league: LeagueKey) =>
     fetch(`${BASE}/predictions/teams?${q_(league)}`).then((r) => j<any>(r)),
@@ -107,11 +111,7 @@ export const api = {
       body: JSON.stringify({ home, away, league }),
     }).then((r) => j<any>(r)),
 
-  /** Projected leaderboard for next season, plus the projection's own error. */
-  predictPlayers: (league: LeagueKey, metric = "pts", limit = 25, order = "desc") =>
-    fetch(`${BASE}/predictions/players?${q_(league, { metric, limit: String(limit), order })}`)
-      .then((r) => j<any>(r)),
-
+  /** One player's projection, the seasons behind it and the model's own error. */
   predictPlayer: (playerId: number, league: LeagueKey) =>
     fetch(`${BASE}/predictions/player/${playerId}?${q_(league)}`).then((r) => j<any>(r)),
 

@@ -1,69 +1,63 @@
 import { useEffect, useState } from "react";
 
-import { Avatar } from "@/components/ui/Avatar";
+import { Avatar, playerAvatar } from "@/components/ui/Avatar";
 import { Card, CardBody, CardHeader } from "@/components/ui/Card";
-import { ErrorNotice } from "@/components/ui/ErrorNotice";
-import { Select } from "@/components/ui/Select";
+import { PlayerCombobox } from "@/components/ui/PlayerCombobox";
 import { api, type Meta } from "@/lib/api";
-import { cn } from "@/lib/cn";
 import { formatValue, label as metricLabel } from "@/lib/metrics";
 import { formatSeason } from "@/lib/season";
 
-const ORDERS = [
-  { value: "top", label: "Highest projected" },
-  { value: "risers", label: "Biggest risers" },
-  { value: "fallers", label: "Biggest fallers" },
-];
-
 /**
- * Player forecasting: next season's projected line for everyone who played a
- * real share of the last one, with the projection's own error shown next to it.
+ * Player forecasting, one player at a time: search for someone and see next
+ * season's projected line with the arithmetic that produced it.
  */
 export function PredictPlayers({ meta }: { meta: Meta }) {
-  const [metric, setMetric] = useState("pts");
-  const [order, setOrder] = useState("top");
-  const [data, setData] = useState<any>(null);
+  const [search, setSearch] = useState("");
+  const [projection, setProjection] = useState<any>(null);
   const [err, setErr] = useState<string | null>(null);
-  const [selected, setSelected] = useState<any>(null);
+  const [loading, setLoading] = useState(false);
+  const avatar = playerAvatar(meta);
 
+  // A player picked in one league has no meaning in the other.
   useEffect(() => {
-    setData(null);
+    setSearch("");
+    setProjection(null);
     setErr(null);
-    setSelected(null);
-    const sortKey = order === "top" ? metric : `${metric}_delta`;
-    const dir = order === "fallers" ? "asc" : "desc";
+  }, [meta.league]);
+
+  const pick = (name: string) => {
+    setSearch(name);
+    setErr(null);
+    setLoading(true);
     api
-      .predictPlayers(meta.league, sortKey, 25, dir)
-      .then(setData)
-      .catch((e) => setErr(e.message));
-  }, [meta.league, metric, order]);
+      .predictPlayer(meta.player_ids[name], meta.league)
+      .then(setProjection)
+      .catch((e) => {
+        setProjection(null);
+        setErr(e.message);
+      })
+      .finally(() => setLoading(false));
+  };
 
-  if (err) return <ErrorNotice message={err} />;
-
-  const rows: any[] = data?.rows ?? [];
-  const accuracy = data?.accuracy;
-  const metricOptions = (data?.metrics ?? ["pts", "reb", "ast", "stl", "blk", "tov", "ts_pct"]).map(
-    (m: string) => ({ value: m, label: metricLabel(m) }),
-  );
+  const accuracy = projection?.accuracy;
 
   return (
     <div className="space-y-4">
       <Card>
         <CardHeader title="Projected next season" />
         <CardBody>
-          <div className="grid gap-3 md:grid-cols-2">
-            <div>
-              <div className="label mb-1.5">Metric</div>
-              <Select value={metric} onChange={setMetric} options={metricOptions} />
-            </div>
-            <div>
-              <div className="label mb-1.5">Show</div>
-              <Select value={order} onChange={setOrder} options={ORDERS} />
-            </div>
-          </div>
+          <div className="label mb-1.5">Find a player</div>
+          <PlayerCombobox
+            options={meta.players}
+            value={search}
+            onChange={pick}
+            placeholder="Search any player"
+            renderAvatar={avatar}
+          />
+          {err && <p className="mt-2 text-xs text-bad">{err}</p>}
           {accuracy?.projection_mae != null && (
             <p className="mt-4 text-xs text-mute">
-              On the last {accuracy.seasons?.length ?? 3} seasons this projection was off by{" "}
+              Over the last {accuracy.seasons?.length ?? 3} seasons, points projections were off by{" "}
               <span className="tabular-nums text-ink">{accuracy.projection_mae}</span> on average,
               against <span className="tabular-nums">{accuracy.baseline_mae}</span> for simply
               repeating last season — {accuracy.improvement >= 0 ? "an improvement of " : "worse by "}
@@ -76,94 +70,25 @@ export function PredictPlayers({ meta }: { meta: Meta }) {
         </CardBody>
       </Card>
 
-      <Card>
-        <CardHeader
-          title={ORDERS.find((o) => o.value === order)?.label ?? "Projected"}
-          right={
-            data ? (
-              <span className="text-xs text-mute">
-                for {formatSeason(rows[0]?.target_season, data.season_format)}
-              </span>
-            ) : undefined
-          }
-        />
-        <CardBody className="p-0">
-          <div className="overflow-x-auto">
-            <table className="w-full text-sm">
-              <thead className="text-mute">
-                <tr className="border-b border-border">
-                  <th className="px-4 py-2 text-left font-medium">Player</th>
-                  <th className="px-4 py-2 text-right font-medium">Age</th>
-                  <th className="px-4 py-2 text-right font-medium">Last</th>
-                  <th className="px-4 py-2 text-right font-medium">Projected</th>
-                  <th className="px-4 py-2 text-right font-medium">Change</th>
-                </tr>
-              </thead>
-              <tbody>
-                {rows.map((r) => (
-                  <tr
-                    key={r.player_id}
-                    className="cursor-pointer border-t border-border/60 hover:bg-border/40"
-                    onClick={() =>
-                      api
-                        .predictPlayer(r.player_id, meta.league)
-                        .then(setSelected)
-                        .catch(() => setSelected(null))
-                    }
-                  >
-                    <td className="px-4 py-2">
-                      <span className="flex items-center gap-2">
-                        <Avatar
-                          name={r.player_name}
-                          id={r.player_id}
-                          league={meta.league}
-                          size={24}
-                        />
-                        <span className="text-ink">{r.player_name}</span>
-                      </span>
-                    </td>
-                    <td className="px-4 py-2 text-right tabular-nums text-mute">
-                      {r.age_at_target ?? "—"}
-                    </td>
-                    <td className="px-4 py-2 text-right tabular-nums text-mute">
-                      {formatValue(metric, r[`${metric}_last`])}
-                    </td>
-                    <td className="px-4 py-2 text-right tabular-nums text-ink">
-                      {formatValue(metric, r[metric])}
-                    </td>
-                    <td
-                      className={cn(
-                        "px-4 py-2 text-right tabular-nums",
-                        r[`${metric}_delta`] > 0
-                          ? "text-good"
-                          : r[`${metric}_delta`] < 0
-                            ? "text-bad"
-                            : "text-mute",
-                      )}
-                    >
-                      {r[`${metric}_delta`] == null
-                        ? "—"
-                        : `${r[`${metric}_delta`] > 0 ? "+" : ""}${formatValue(
-                            metric,
-                            r[`${metric}_delta`],
-                          )}`}
-                    </td>
-                  </tr>
-                ))}
-                {rows.length === 0 && (
-                  <tr>
-                    <td colSpan={5} className="px-4 py-6 text-mute">
-                      No projections yet.
-                    </td>
-                  </tr>
-                )}
-              </tbody>
-            </table>
-          </div>
-        </CardBody>
-      </Card>
-
-      {selected && <PlayerDetail projection={selected} meta={meta} />}
+      {loading ? (
+        <Card>
+          <CardBody>
+            <div className="text-sm text-mute">Projecting {search}…</div>
+          </CardBody>
+        </Card>
+      ) : projection ? (
+        <PlayerDetail projection={projection} meta={meta} />
+      ) : (
+        !err && (
+          <Card>
+            <CardBody>
+              <div className="text-sm text-mute">
+                Search for a player to see their projected line.
+              </div>
+            </CardBody>
+          </Card>
+        )
+      )}
     </div>
   );
 }
@@ -172,6 +97,7 @@ export function PredictPlayers({ meta }: { meta: Meta }) {
 function PlayerDetail({ projection, meta }: { projection: any; meta: Meta }) {
   const fmt = (s: string) => formatSeason(s, projection.season_format ?? meta.season_format);
   const metrics = Object.keys(projection.projected ?? {});
+  const leagueTarget: string | undefined = projection.league_target_season;
   return (
     <Card>
       <CardHeader
@@ -228,6 +154,12 @@ function PlayerDetail({ projection, meta }: { projection: any; meta: Meta }) {
             </tbody>
           </table>
         </div>
+        {leagueTarget && projection.target_season !== leagueTarget && (
+          <p className="px-4 pt-3 text-xs text-mute">
+            {projection.player_name} last played in {fmt(projection.based_on[0])}, so this is the
+            season that would have followed — not {fmt(leagueTarget)}.
+          </p>
+        )}
         <p className="px-4 py-3 text-xs text-mute">
           Recent seasons weighted {`${12}/${3}/${1}`} and by games played, regressed toward the
           league mean, then adjusted ×{projection.age_multiplier} for age.

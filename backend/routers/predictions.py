@@ -87,9 +87,14 @@ def player(player_id: int, league: str | None = None):
     """One player's projection, with the seasons and weights behind it."""
     lg = leagues.get(league)
     try:
-        return analytics.json_safe({**predictions.project_player(lg, player_id),
-                                    "league": lg.key,
-                                    "season_format": lg.season_format})
+        return analytics.json_safe({
+            **predictions.project_player(lg, player_id),
+            "league": lg.key,
+            "season_format": lg.season_format,
+            # For spotting a retired player, whose own next season is in the past.
+            "league_target_season": str(predictions.next_season(lg)),
+            "accuracy": predictions.player_backtest(lg, "pts", seasons_back=3),
+        })
     except KeyError as e:
         raise HTTPException(404, f"No {lg.label} player with id {e.args[0]}.") from e
     except ValueError as e:
@@ -173,4 +178,46 @@ def schedule(date: str, league: str | None = None):
         "model": "elo",
         "note": None if all(g["prediction"] for g in games) else
                 "Some teams have no rating yet, so those games are unpredicted.",
+    })
+
+
+@router.get("/game/{game_id}")
+def game(game_id: str, league: str | None = None, top: int = predictions.ROTATION_SIZE):
+    """One scheduled game: the team model's read, plus a projected line for
+    every rotation player, and what they actually did if it has been played."""
+    lg = leagues.get(league)
+    df = _schedule_frame(lg)
+    row = df[df.game_id.astype(str) == str(game_id)]
+    if row.empty:
+        raise HTTPException(404, f"No {lg.label} game with id {game_id!r}.")
+    g = row.iloc[0]
+
+    lines = predictions.game_player_lines(lg, g.home, g.away, int(g.season),
+                                          top=max(1, min(int(top), 15)))
+    actual = (predictions.game_actual_lines(lg, g.date, g.home, g.away)
+              if bool(g.completed) else {})
+
+    # Match the projection to the box score by player, so a line can be read
+    # against what happened rather than beside it.
+    for side, rows in lines["players"].items():
+        played = {p["player_id"]: p for p in actual.get(side, [])}
+        for r in rows:
+            r["actual"] = played.get(r["player_id"])
+
+    return analytics.json_safe({
+        "league": lg.key,
+        "game_id": str(g.game_id),
+        "date": g.date,
+        "home": g.home, "away": g.away,
+        "home_name": g.home_name, "away_name": g.away_name,
+        "completed": bool(g.completed),
+        "prediction": _predict_row(lg, g.home, g.away),
+        **lines,
+        "metrics": list(predictions.GAME_LINE_METRICS),
+        "accuracy": predictions.game_line_backtest(lg, "pts"),
+        "model": "marcel-style projection, adjusted for opponent and venue",
+        "roster_note": (
+            "Rotations are last season's, ordered by minutes — the schedule "
+            "carries no roster, so trades and signings since are not reflected."
+        ),
     })

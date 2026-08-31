@@ -88,7 +88,7 @@ export default function App() {
         <div className="absolute right-5 top-5">
           <ThemeToggle />
         </div>
-        <Landing meta={meta} onPick={switchMode} />
+        <Landing onPick={switchMode} />
       </div>
     );
   }

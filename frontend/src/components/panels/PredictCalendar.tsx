@@ -190,6 +190,7 @@ export function PredictCalendar({ meta }: { meta: Meta }) {
                 <GameRow
                   key={g.game_id}
                   game={g}
+                  league={meta.league}
                   open={openGame === g.game_id}
                   onToggle={() => setOpenGame(openGame === g.game_id ? null : g.game_id)}
                 />
@@ -210,14 +211,28 @@ function longDate(iso: string) {
 
 function GameRow({
   game,
+  league,
   open,
   onToggle,
 }: {
   game: any;
+  league: Meta["league"];
   open: boolean;
   onToggle: () => void;
 }) {
   const p = game.prediction;
+  // Player lines are a heavier query than the day view, so they are fetched
+  // when a game is actually opened rather than for every game on the date.
+  const [lines, setLines] = useState<any>(null);
+  const [linesErr, setLinesErr] = useState<string | null>(null);
+
+  useEffect(() => {
+    if (!open || lines || linesErr) return;
+    api
+      .predictGame(league, game.game_id)
+      .then(setLines)
+      .catch((e) => setLinesErr(e.message));
+  }, [open, league, game.game_id, lines, linesErr]);
   const homeFavoured = p ? p.home_win_prob >= 0.5 : false;
   const favourite = p ? (homeFavoured ? game.home : game.away) : null;
   const favProb = p ? Math.max(p.home_win_prob, p.away_win_prob) : 0;
@@ -244,31 +259,148 @@ function GameRow({
         {game.completed && <span className="text-xs text-mute">final</span>}
       </button>
 
-      {open && p && (
+      {open && (
         <div className="px-5 pb-4">
-          <div className="flex items-end justify-between text-sm">
-            <div>
-              <div className="font-semibold text-ink">{game.away}</div>
-              <div className="text-xs text-mute">away · Elo {p.away_elo}</div>
+          {/* The team model needs a rating for both sides; the player lines do
+              not, so an unrated game still gets its rotations projected. */}
+          {p && (
+            <>
+              <div className="flex items-end justify-between text-sm">
+                <div>
+                  <div className="font-semibold text-ink">{game.away}</div>
+                  <div className="text-xs text-mute">away · Elo {p.away_elo}</div>
+                </div>
+                <div className="text-center text-xs text-mute">
+                  {favourite} by {Math.abs(p.projected_margin).toFixed(1)}
+                </div>
+                <div className="text-right">
+                  <div className="font-semibold text-ink">{game.home}</div>
+                  <div className="text-xs text-mute">home · Elo {p.home_elo}</div>
+                </div>
+              </div>
+              <div className="mt-2 flex h-2 overflow-hidden bg-border">
+                <div className="bg-accent2" style={{ width: `${p.away_win_prob * 100}%` }} />
+                <div className="flex-1 bg-accent" />
+              </div>
+              <div className="mt-1 flex justify-between text-xs tabular-nums text-mute">
+                <span>{(p.away_win_prob * 100).toFixed(0)}%</span>
+                <span>{(p.home_win_prob * 100).toFixed(0)}%</span>
+              </div>
+            </>
+          )}
+
+          <div className={cn("pt-4", p && "mt-5 border-t border-border/60")}>
+            <div className="label mb-2">
+              Projected player lines
+              {game.completed && " · actual in parentheses"}
             </div>
-            <div className="text-center text-xs text-mute">
-              {favourite} by {Math.abs(p.projected_margin).toFixed(1)}
-            </div>
-            <div className="text-right">
-              <div className="font-semibold text-ink">{game.home}</div>
-              <div className="text-xs text-mute">home · Elo {p.home_elo}</div>
-            </div>
-          </div>
-          <div className="mt-2 flex h-2 overflow-hidden bg-border">
-            <div className="bg-accent2" style={{ width: `${p.away_win_prob * 100}%` }} />
-            <div className="flex-1 bg-accent" />
-          </div>
-          <div className="mt-1 flex justify-between text-xs tabular-nums text-mute">
-            <span>{(p.away_win_prob * 100).toFixed(0)}%</span>
-            <span>{(p.home_win_prob * 100).toFixed(0)}%</span>
+            {linesErr ? (
+              <div className="text-xs text-bad">{linesErr}</div>
+            ) : !lines ? (
+              <div className="text-xs text-mute">Projecting the rotations…</div>
+            ) : (
+              <>
+                <div className="grid gap-4 md:grid-cols-2">
+                  <TeamLines
+                    team={game.away}
+                    label="away"
+                    rows={lines.players?.away ?? []}
+                    adjustment={lines.adjustments?.away}
+                    completed={game.completed}
+                  />
+                  <TeamLines
+                    team={game.home}
+                    label="home"
+                    rows={lines.players?.home ?? []}
+                    adjustment={lines.adjustments?.home}
+                    completed={game.completed}
+                  />
+                </div>
+                <p className="mt-3 text-xs leading-relaxed text-mute">
+                  {lines.accuracy?.mae != null && (
+                    <>
+                      Lines land {lines.accuracy.mae} points from the box score on average
+                      over {lines.accuracy.player_games.toLocaleString()} player-games in{" "}
+                      {lines.accuracy.season}
+                      {lines.accuracy.naive_mae != null &&
+                        ` (repeating last season: ${lines.accuracy.naive_mae})`}
+                      .{" "}
+                    </>
+                  )}
+                  {lines.roster_note}
+                </p>
+              </>
+            )}
           </div>
         </div>
       )}
     </li>
+  );
+}
+
+/** One team's projected rotation. Each cell is the projection; for a game
+ *  already played the box score follows it in muted type. */
+function TeamLines({
+  team,
+  label,
+  rows,
+  adjustment,
+  completed,
+}: {
+  team: string;
+  label: string;
+  rows: any[];
+  adjustment?: { opponent_defence: number; venue_factor: number };
+  completed: boolean;
+}) {
+  if (!rows.length) {
+    return (
+      <div className="text-xs text-mute">
+        No rotation on file for {team}.
+      </div>
+    );
+  }
+  return (
+    <div>
+      <div className="mb-1 flex items-baseline justify-between">
+        <span className="text-sm font-semibold text-ink">
+          {team} <span className="text-xs font-normal text-mute">{label}</span>
+        </span>
+        {adjustment && (
+          <span className="text-[11px] tabular-nums text-mute">
+            opp ×{adjustment.opponent_defence.toFixed(2)} · venue ×
+            {adjustment.venue_factor.toFixed(3)}
+          </span>
+        )}
+      </div>
+      <table className="w-full text-xs">
+        <thead>
+          <tr className="text-left uppercase tracking-wider text-mute">
+            <th className="py-1 font-medium">Player</th>
+            <th className="py-1 text-right font-medium">Pts</th>
+            <th className="py-1 text-right font-medium">Reb</th>
+            <th className="py-1 text-right font-medium">Ast</th>
+          </tr>
+        </thead>
+        <tbody>
+          {rows.map((r) => (
+            <tr key={r.player_id} className="border-t border-border/40">
+              <td className="truncate py-1 pr-2 text-ink">
+                {r.player_name}
+                {completed && !r.actual && <span className="ml-1.5 text-mute">dnp</span>}
+              </td>
+              {(["pts", "reb", "ast"] as const).map((m) => (
+                <td key={m} className="py-1 text-right tabular-nums text-ink">
+                  {r[m] == null ? "—" : r[m].toFixed(1)}
+                  {completed && r.actual && (
+                    <span className="ml-1 text-mute">({r.actual[m]})</span>
+                  )}
+                </td>
+              ))}
+            </tr>
+          ))}
+        </tbody>
+      </table>
+    </div>
   );
 }
