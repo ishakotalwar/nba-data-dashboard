@@ -8,7 +8,6 @@ import { Similar } from "./components/panels/Similar";
 import { TeamsSection } from "./components/panels/TeamsSection";
 import { Explorer } from "./components/panels/Explorer";
 import { ShotAnalysis } from "./components/panels/ShotAnalysis";
-import { formatSeason } from "@/lib/season";
 import { AskFullCourt } from "@/components/AskFullCourt";
 import { Landing } from "@/components/Landing";
 import { PredictCalendar } from "@/components/panels/PredictCalendar";
@@ -108,15 +107,6 @@ export default function App() {
               title="Back to the start"
             >
               <div className="text-[15px] font-semibold leading-tight">Full Court</div>
-              <div className="text-xs text-mute">
-                {meta.players.length.toLocaleString()} players ·{" "}
-                {meta.seasons.length > 1
-                  ? `${formatSeason(meta.seasons[0], meta.season_format)}–${formatSeason(
-                      meta.seasons[meta.seasons.length - 1],
-                      meta.season_format
-                    )}`
-                  : formatSeason(meta.seasons[0], meta.season_format)}
-              </div>
             </button>
           </div>
           <div className="flex items-center gap-3">
