@@ -1,4 +1,4 @@
-"""FastAPI app for the Hoops Data Dashboard (NBA + WNBA).
+"""FastAPI app for Full Court (NBA + WNBA).
 
 This module only assembles the app. Endpoints live in `routers/`, grouped by
 the product surface they serve; shared maths lives in `analytics.py`; and
@@ -21,7 +21,7 @@ from .routers import (
 )
 
 app = FastAPI(
-    title="Hoops Data Dashboard API",
+    title="Full Court API",
     description="Player-season and team analytics for the NBA and WNBA, served from local Parquet.",
 )
 
