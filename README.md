@@ -116,6 +116,18 @@ The app opens on a choice — explore stats, or explore predictions — and the
 header switches between them from any page. Both halves cover the NBA and the
 WNBA.
 
+**Games** is a calendar of the schedule: pick a date, see that day's games and
+what the model makes of each. The schedule is the one thing the historical data
+cannot contain, so it has its own pipeline — `etl/schedule_etl.py` writes
+`data/schedule_{nba,wnba}.parquet` and refreshes independently of the analytics
+ETL. Times are converted to US Eastern before the calendar day is taken, since
+a 02:00 UTC tip-off belongs to the previous evening.
+
+```bash
+python etl/schedule_etl.py                # both leagues, current and next season
+python etl/schedule_etl.py --league wnba
+```
+
 **Teams** use Elo: a home-court term, a margin-of-victory update, and a pull
 back toward the mean between seasons. Game results are rebuilt from the player
 game logs, which carry no score but do name both teams and mark the home side.

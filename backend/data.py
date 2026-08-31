@@ -107,6 +107,16 @@ def gamelog(league: League = DEFAULT) -> pd.DataFrame | None:
 
 
 @lru_cache(maxsize=8)
+def schedule(league: League = DEFAULT) -> pd.DataFrame | None:
+    """Scheduled games for this league, or None if the schedule ETL hasn't run.
+
+    Built by `etl/schedule_etl.py`, separately from the historical data: this
+    is the only file that says anything about games not yet played.
+    """
+    return _load_optional("schedule", league)
+
+
+@lru_cache(maxsize=8)
 def birthdates(league: League = DEFAULT) -> dict[int, pd.Timestamp]:
     """player_id -> birthdate, empty when this league has no bio file."""
     df = _load_optional("player_bio", league)

@@ -88,6 +88,14 @@ export const api = {
       body: JSON.stringify({ question, league }),
     }).then((r) => j<any>(r)),
 
+  /** Dates that have scheduled games, for the calendar grid. */
+  predictCalendar: (league: LeagueKey) =>
+    fetch(`${BASE}/predictions/calendar?${q_(league)}`).then((r) => j<any>(r)),
+
+  /** One date's games, each with the model's read on it. */
+  predictSchedule: (league: LeagueKey, date: string) =>
+    fetch(`${BASE}/predictions/schedule?${q_(league, { date })}`).then((r) => j<any>(r)),
+
   /** Team power ratings, the Elo backtest and its calibration. */
   predictTeams: (league: LeagueKey) =>
     fetch(`${BASE}/predictions/teams?${q_(league)}`).then((r) => j<any>(r)),

@@ -11,6 +11,7 @@ import { ShotAnalysis } from "./components/panels/ShotAnalysis";
 import { formatSeason } from "@/lib/season";
 import { AskFullCourt } from "@/components/AskFullCourt";
 import { Landing } from "@/components/Landing";
+import { PredictCalendar } from "@/components/panels/PredictCalendar";
 import { PredictTeams } from "@/components/panels/PredictTeams";
 import { PredictPlayers } from "@/components/panels/PredictPlayers";
 import { useTheme, toggleTheme } from "@/lib/theme";
@@ -28,13 +29,14 @@ const TABS = [
 ] as const;
 
 const PREDICT_TABS = [
+  { v: "predict-calendar", label: "Games", group: "predict" },
   { v: "predict-teams", label: "Teams", group: "predict" },
   { v: "predict-players", label: "Players", group: "predict" },
 ] as const;
 
 const DEFAULT_TAB: Record<Mode, string> = {
   stats: "players",
-  predictions: "predict-teams",
+  predictions: "predict-calendar",
 };
 
 export default function App() {
@@ -161,6 +163,7 @@ export default function App() {
           <Tabs.Content value="explorer">
             <Explorer meta={meta} seed={seedFor("explorer")} />
           </Tabs.Content>
+          <Tabs.Content value="predict-calendar"><PredictCalendar meta={meta} /></Tabs.Content>
           <Tabs.Content value="predict-teams"><PredictTeams meta={meta} /></Tabs.Content>
           <Tabs.Content value="predict-players"><PredictPlayers meta={meta} /></Tabs.Content>
         </Tabs.Root>
