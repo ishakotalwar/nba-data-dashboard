@@ -113,20 +113,15 @@ export function TeamCompare({ meta }: { meta: Meta }) {
   }, [rows]);
 
   const layout = useMemo(() => {
-    if (!rows.length || !avg) return {};
-    return {
+    // Axis scaffolding is returned even with no rows, so the empty chart still
+    // shows what it is going to plot.
+    const base: any = {
       margin: { t: 16, r: 10, b: 48, l: 60 },
       showlegend: false,
       hovermode: "closest",
       // Defense improves downward, so invert it: up and to the right is better.
       xaxis: { title: "Offensive rating →", gridcolor: "#1f2630", zeroline: false },
       yaxis: { title: "← Defensive rating", gridcolor: "#1f2630", autorange: "reversed", zeroline: false },
-      shapes: [
-        { type: "line", x0: avg.ortg, x1: avg.ortg, yref: "paper", y0: 0, y1: 1,
-          line: { color: "#3a4250", width: 1, dash: "dot" } },
-        { type: "line", y0: avg.drtg, y1: avg.drtg, xref: "paper", x0: 0, x1: 1,
-          line: { color: "#3a4250", width: 1, dash: "dot" } },
-      ],
       annotations: [
         { xref: "paper", yref: "paper", x: 1, y: 1, xanchor: "right", yanchor: "top",
           text: "good offense · good defense", showarrow: false,
@@ -136,6 +131,15 @@ export function TeamCompare({ meta }: { meta: Meta }) {
           font: { color: "#6b7685", size: 10 } },
       ],
     };
+    if (avg) {
+      base.shapes = [
+        { type: "line", x0: avg.ortg, x1: avg.ortg, yref: "paper", y0: 0, y1: 1,
+          line: { color: "#3a4250", width: 1, dash: "dot" } },
+        { type: "line", y0: avg.drtg, y1: avg.drtg, xref: "paper", x0: 0, x1: 1,
+          line: { color: "#3a4250", width: 1, dash: "dot" } },
+      ];
+    }
+    return base;
   }, [rows, avg]);
 
   return (
@@ -162,13 +166,7 @@ export function TeamCompare({ meta }: { meta: Meta }) {
           subtitle="Dotted lines mark the league average. Color shows net rating; the vertical axis is inverted so up-and-right is the strong quadrant."
         />
         <CardBody>
-          {traces.length === 0 ? (
-            <div className="grid place-items-center py-10 text-sm text-mute">
-              Pick a season.
-            </div>
-          ) : (
-            <Plot data={traces as any} layout={layout} height={480} />
-          )}
+          <Plot data={traces as any} layout={layout} height={480} placeholder="Select a season" />
         </CardBody>
       </Card>
 

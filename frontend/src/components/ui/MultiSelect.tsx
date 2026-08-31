@@ -14,6 +14,8 @@ type Props = {
   className?: string;
   /** Render a leading avatar for each option. Omit for non-player lists. */
   renderAvatar?: (name: string, size: number) => React.ReactNode;
+  /** Display text for an option value — e.g. metric key -> human label. */
+  renderLabel?: (value: string) => string;
 };
 
 export function MultiSelect({
@@ -24,16 +26,20 @@ export function MultiSelect({
   max,
   className,
   renderAvatar,
+  renderLabel,
 }: Props) {
   const [q, setQ] = useState("");
   const [open, setOpen] = useState(false);
   const inputRef = useRef<HTMLInputElement>(null);
 
   // No cap: the list is windowed, so every match stays reachable by scrolling.
+  const text = renderLabel ?? ((v: string) => v);
+
   const filtered = useMemo(() => {
     const qq = q.trim().toLowerCase();
-    return qq ? options.filter((o) => o.toLowerCase().includes(qq)) : options;
-  }, [options, q]);
+    return qq ? options.filter((o) => text(o).toLowerCase().includes(qq)) : options;
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [options, q, renderLabel]);
 
   const toggle = (v: string) => {
     if (value.includes(v)) onChange(value.filter((x) => x !== v));
@@ -51,8 +57,8 @@ export function MultiSelect({
         <button
           type="button"
           className={cn(
-            "flex min-h-[42px] w-full flex-wrap items-center gap-1.5 rounded-lg border border-border bg-bg/60 px-2.5 py-1.5 text-left text-sm",
-            "hover:border-accent/40 focus:outline-none focus:ring-2 focus:ring-accent/30",
+           "flex min-h-[42px] w-full flex-wrap items-center gap-1.5 border border-border bg-bg px-2.5 py-1.5 text-left text-sm",
+           "hover:border-mute focus:border-accent focus:outline-none",
             className
           )}
         >
@@ -60,7 +66,7 @@ export function MultiSelect({
           {value.map((v) => (
             <span key={v} className={cn("chip", renderAvatar && "!py-0.5 !pl-0.5")}>
               {renderAvatar?.(v, 22)}
-              {v}
+              {text(v)}
               <button
                 type="button"
                 className="ml-1 text-mute hover:text-ink"
@@ -79,7 +85,7 @@ export function MultiSelect({
         <Popover.Content
           align="start"
           sideOffset={6}
-          className="z-50 w-[--radix-popover-trigger-width] rounded-lg border border-border bg-panel p-2 shadow-card"
+          className="z-50 w-[--radix-popover-trigger-width] border border-border bg-panel p-2"
           onOpenAutoFocus={(e) => {
             e.preventDefault();
             inputRef.current?.focus();
@@ -107,13 +113,13 @@ export function MultiSelect({
                   onClick={() => toggle(o)}
                   style={{ height: ROW_H }}
                   className={cn(
-                    "flex w-full items-center gap-2 rounded-md px-2 text-left text-sm",
-                    on ? "bg-accent/15 text-ink" : "hover:bg-border/60",
+                   "flex w-full items-center gap-2 px-2 text-left text-sm",
+                    on ? "bg-border text-ink" : "hover:bg-border/60",
                     disabled && "opacity-40"
                   )}
                 >
                   {renderAvatar?.(o, 28)}
-                  <span className="truncate">{o}</span>
+                  <span className="truncate">{text(o)}</span>
                   {on && <span className="ml-auto text-accent">✓</span>}
                 </button>
               );

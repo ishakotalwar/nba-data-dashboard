@@ -114,34 +114,32 @@ export function Teams({ meta }: { meta: Meta }) {
         <Card>
           <CardHeader title="Offensive & defensive rating" subtitle="Points scored / allowed per 100 possessions" />
           <CardBody>
-            {ratingTrace.length === 0 ? (
-              <div className="py-10 text-center text-sm text-mute">No data.</div>
-            ) : (
-              <Plot
-                data={ratingTrace as any}
-                layout={{ margin: { t: 20 }, xaxis: { type: "category", nticks: 10, tickangle: 0 } }}
-                height={320}
-              />
-            )}
+            <Plot
+              data={ratingTrace as any}
+              layout={{
+                margin: { t: 20 },
+                xaxis: { type: "category", nticks: 10, tickangle: 0, title: "Season" },
+                yaxis: { title: "Points per 100 poss." },
+              }}
+              height={320}
+              placeholder="Select a team"
+            />
           </CardBody>
         </Card>
         <Card>
           <CardHeader title="Net rating" subtitle="ORtg − DRtg; above zero outscores its opponents" />
           <CardBody>
-            {netTrace.length === 0 ? (
-              <div className="py-10 text-center text-sm text-mute">No data.</div>
-            ) : (
-              <Plot
-                data={netTrace as any}
-                layout={{
-                  margin: { t: 20 },
-                  showlegend: false,
-                  xaxis: { type: "category", nticks: 10, tickangle: 0 },
-                  yaxis: { zerolinecolor: "#3a4250", zerolinewidth: 1 },
-                }}
-                height={320}
-              />
-            )}
+            <Plot
+              data={netTrace as any}
+              layout={{
+                margin: { t: 20 },
+                showlegend: false,
+                xaxis: { type: "category", nticks: 10, tickangle: 0, title: "Season" },
+                yaxis: { title: "ORtg − DRtg", zerolinecolor: "#3a4250", zerolinewidth: 1 },
+              }}
+              height={320}
+              placeholder="Select a team"
+            />
           </CardBody>
         </Card>
       </div>
@@ -149,15 +147,17 @@ export function Teams({ meta }: { meta: Meta }) {
       <Card>
         <CardHeader title="Pace" subtitle="Possessions per game" />
         <CardBody>
-          {paceTrace.length === 0 ? (
-            <div className="py-10 text-center text-sm text-mute">No data.</div>
-          ) : (
-            <Plot
-              data={paceTrace as any}
-              layout={{ margin: { t: 20 }, showlegend: false, xaxis: { type: "category", nticks: 12, tickangle: 0 } }}
-              height={280}
-            />
-          )}
+          <Plot
+            data={paceTrace as any}
+            layout={{
+              margin: { t: 20 },
+              showlegend: false,
+              xaxis: { type: "category", nticks: 12, tickangle: 0, title: "Season" },
+              yaxis: { title: "Possessions per game" },
+            }}
+            height={280}
+            placeholder="Select a team"
+          />
         </CardBody>
       </Card>
 
@@ -167,15 +167,18 @@ export function Teams({ meta }: { meta: Meta }) {
           subtitle="eFG%, TOV%, ORB%, FT rate explain ~95% of winning. ORB% is OREB/(OREB+DREB) as a proxy."
         />
         <CardBody>
-          {factorsTrace.length === 0 ? (
-            <div className="py-10 text-center text-sm text-mute">No data.</div>
-          ) : (
-            <Plot
-              data={factorsTrace as any}
-              layout={{ barmode: "group", margin: { t: 10 }, xaxis: { type: "category" } }}
-              height={360}
-            />
-          )}
+          <Plot
+            data={factorsTrace as any}
+            layout={{
+              barmode: "group",
+              margin: { t: 10 },
+              xaxis: { type: "category", categoryorder: "array",
+                       categoryarray: ["eFG%", "TOV%", "ORB%", "FT rate"] },
+              yaxis: { title: "Rate" },
+            }}
+            height={360}
+            placeholder="Select a team and season"
+          />
         </CardBody>
       </Card>
     </div>

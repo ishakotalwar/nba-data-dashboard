@@ -1,195 +1,180 @@
 # Hoops Data Dashboard
 
-An interactive dashboard for exploring **NBA and WNBA** player and team statistics, covering 2003 to the present. Every panel is served from local Parquet files, so the app makes no network calls at request time.
+![Player overview](docs/screenshot.png)
 
-Switch leagues with the NBA/WNBA toggle in the header. Each league has its own Parquet files, and every stat — percentile ranks, similarity scores, league averages, Four Factors — is computed within the selected league only.
+An analytics app for the **NBA and WNBA**, covering 2003 to the present. It is built
+to answer basketball questions — *who had a season like 2025 SGA?*, *where is Curry
+efficient relative to the league?*, *which player-seasons averaged 25+ points on 40%
+from three?* — rather than to expose one chart per page.
+
+Everything is served from local Parquet, so no request touches the network.
+
+## Highlights
+
+- **NBA and WNBA**, switched from one control, with every stat computed inside the selected league
+- **2003–present**: 16,000+ player-seasons, 1,000+ team-seasons, 1.36M shot locations
+- **Player-season as the unit** — "2016 Stephen Curry" is a first-class thing to select and compare
+- **Historical similarity**: weighted cosine over every qualifying season, with explanations for *why* two seasons are alike
+- **Shot analysis** by zone, against the league average for the same season
+- **Stat explorer** for arbitrary filter stacks over the full history
+- **Local Parquet API** — fast, offline, and immune to upstream rate limits
 
 ## Features
 
-- **Compare** — radar + bar charts for up to 5 players on any subset of metrics.
-- **Trends** — season-by-season line charts with a league-average overlay.
-- **Percentiles** — color-coded league-percentile rankings for any player-season.
-- **Similar Players** — weighted cosine similarity with per-feature sliders + radar overlay.
-- **Game Log** — per-game line + rolling average for a player-season.
-- **Age Curves** — metric vs. age for multiple players, using birthdates from `player_bio_*.parquet`.
-- **Teams** — historical wins/losses, shooting %, and Dean Oliver's Four Factors vs. league average.
-- **Shot Chart** — raw scatter or hexbin density view (FG% coloring, shot-volume sizing). Covers the most recent seasons only; see [Shot data coverage](#shot-data-coverage).
+| Page | What it answers |
+|---|---|
+| **Players** | One player-season: bio, headline stats with league percentile and rank, career trend, recent games |
+| **Compare** | Any player-seasons side by side — percentile radar, raw values, and the gap to that season's league average. A **Career** mode plots career trajectories against age |
+| **Similarity** | Most similar seasons from anywhere in the dataset, with weighting presets (Overall / Scoring / Shooting / Playmaking / Defense / Custom) and per-result explanations |
+| **Shot Analysis** | Hexbin and scatter shot charts, zone-by-zone accuracy vs. the league, and two player-seasons compared |
+| **Teams** | League table, team profile over time, any two team-seasons head to head, and all-time leaderboards |
+| **Explorer** | Filter every player-season by any metric with `>`, `>=`, `<`, `<=`, `=` or `between`, then sort and page through the results |
 
-## Stack
+## Architecture
 
-- **Backend**: FastAPI (Python) — pandas + scikit-learn + scipy. `nba_api` is a fallback only, used when a league has no local shot/game-log file.
-- **Frontend**: Vite + React + TypeScript + Tailwind + Radix UI + Plotly.js.
-- **Data**: per-league Parquet files from [sportsdataverse](https://github.com/sportsdataverse) via `etl/sdv_etl.py` (hoopR for the NBA, wehoop for the WNBA). `etl/nba_etl.py` remains for stats.nba.com, and `nba_api` is the fallback when a league has no local shot/game-log data.
-- **Legacy**: the original Streamlit prototype (`app.py`) is still present as a fallback.
+```text
+      sportsdataverse
+   (hoopR · wehoop on GitHub)
+              │
+              ▼
+         Python ETL              etl/sdv_etl.py
+              │
+              ▼
+       Local Parquet             data/*_{nba,wnba}.parquet
+              │
+              ▼
+          FastAPI                backend/routers/*
+              │
+              ▼
+    React + TypeScript           frontend/src
+              │
+              ▼
+     Plotly analytics UI
+```
+
+Three rules keep it from sprawling:
+
+- **`backend/leagues.py` is the only place leagues differ.** League id, season format, season start month, Parquet suffix and three-point geometry live there; nothing else branches on league.
+- **`backend/analytics.py` holds the maths.** Percentiles, Four Factors and ranking are pure functions over DataFrames, so routers stay thin and the same numbers back every page.
+- **`frontend/src/lib/metrics.ts` is the only place metrics are described.** Labels, formatting, category and direction come from one table used by every panel.
+
+## Tech Stack
+
+- **Backend**: FastAPI, pandas, scikit-learn, scipy
+- **Frontend**: Vite, React, TypeScript, Tailwind, Radix UI, Plotly.js
+- **Data**: Parquet on disk, built by a Python ETL from [sportsdataverse](https://github.com/sportsdataverse)
 
 ## Setup
-
-Clone and install once:
 
 ```bash
 git clone https://github.com/ishakotalwar/nba-data-dashboard.git
 cd nba-data-dashboard
 
-# Python backend
 python -m venv venv
 source venv/bin/activate
 pip install -r requirements.txt
 
-# Populate local Parquet data (once per league)
-python etl/sdv_etl.py --league nba     # 2003-present
+python etl/sdv_etl.py --league nba      # 2003-present
 python etl/sdv_etl.py --league wnba
 
-# Frontend
-cd frontend
-npm install
-cd ..
+cd frontend && npm install && cd ..
 ```
 
-## Run (dev)
-
-Two terminals. Backend:
+Run it in two terminals:
 
 ```bash
 source venv/bin/activate
 uvicorn backend.main:app --reload --port 8000
 ```
 
-Frontend:
-
 ```bash
 cd frontend
 npm run dev
 ```
 
-Open http://localhost:5173. The Vite dev server proxies `/api/*` to the FastAPI backend on :8000.
+Open <http://localhost:5173>. Vite proxies `/api/*` to the backend on :8000.
 
-## Run the legacy Streamlit app
+The original Streamlit prototype is still there: `streamlit run app.py`.
 
-```bash
-source venv/bin/activate
-streamlit run app.py
-```
+## Data Pipeline
 
-## Project layout
+`etl/sdv_etl.py` downloads ESPN-sourced Parquet published by
+[hoopR](https://github.com/sportsdataverse/hoopR-nba-data) (NBA) and
+[wehoop](https://github.com/sportsdataverse/wehoop-wnba-data) (WNBA), then reshapes
+it into six files per league:
 
-```
-backend/         FastAPI app (data.py, leagues.py, live.py, main.py)
-frontend/        Vite + React SPA
-etl/             sdv_etl.py — sportsdataverse -> data/*.parquet (either league)
-                 nba_etl.py — stats.nba.com (blocked on many networks)
-data/            Parquet files, suffixed per league
-                 (players_nba.parquet, players_wnba.parquet, ...)
-app.py           Legacy Streamlit prototype (NBA only)
-```
-
-## Leagues
-
-`backend/leagues.py` is the single source of truth for what differs between
-leagues — stats.nba.com `LeagueID`, Parquet suffix, the month a season starts
-(used to age players), and three-point geometry:
-
-| | NBA | WNBA |
-|---|---|---|
-| LeagueID | `00` | `10` |
-| Season starts | October | May |
-| 3PT arc | 23' 9" | 22' 1.75" |
-| 3PT corner | 22' 0" | 21' 7.75" |
-
-Every data endpoint takes an optional `?league=nba\|wnba`, defaulting to `nba`
-(`/api/health` and `/api/leagues` do not). `GET /api/leagues` reports which
-leagues have data on disk, and drives the header toggle.
-
-### How seasons are labelled
-
-Both leagues use a plain year, but it means different things, because the NBA
-season spans a new year and the WNBA season does not:
-
-| label | NBA | WNBA |
-|---|---|---|
-| `2024` | the **2023-24** season (Oct 2023 - Apr 2024) | the **2024** season (May - Sep 2024) |
-
-So an NBA season is named for the year it **ends**. `League.season_format` and
-`League.season()` produce the `2024-25` style instead, but those are used only
-by `etl/nba_etl.py`; data from `sdv_etl.py` is always a plain year.
-
-Adding another league (G League is `LeagueID=20`) means adding one entry to
-`LEAGUES` and running the ETL for it.
-
-### Where the data comes from
-
-stats.nba.com silently drops requests to its `/stats/` API from many IPs — the
-connection and TLS handshake succeed, then nothing comes back. That makes
-`etl/nba_etl.py` unusable on those networks, for either league.
-
-`etl/sdv_etl.py` sidesteps it. sportsdataverse publishes ESPN-sourced data as
-plain Parquet on GitHub — [hoopR](https://github.com/sportsdataverse/hoopR-nba-data)
-for the NBA, [wehoop](https://github.com/sportsdataverse/wehoop-wnba-data) for
-the WNBA. Both repos share a layout, so one script covers both leagues, and
-there is no API to be rate-limited by.
+| File | Feeds |
+|---|---|
+| `players_*` | Players, Compare, Similarity, Explorer |
+| `teams_*` | Teams |
+| `teams_master_*` | franchise list |
+| `gamelog_*` | recent games |
+| `shots_*` | Shot Analysis |
+| `player_bio_*` | bio and age |
 
 ```bash
 python etl/sdv_etl.py --league nba
 python etl/sdv_etl.py --league wnba --seasons 2015-2026
-python etl/sdv_etl.py --league nba --shot-seasons 2020-2026
-```
-
-It writes six files per league, all suffixed (`_nba` / `_wnba`):
-
-| file | feeds |
-|---|---|
-| `players_*` | Compare, Trends, Percentiles, Similar |
-| `teams_*` | Teams |
-| `teams_master_*` | franchise list |
-| `gamelog_*` | Game Log |
-| `shots_*` | Shot Chart |
-| `player_bio_*` | Age Curves |
-
-Every panel reads from disk; nothing hits the network at request time.
-
-### Shot data coverage
-
-Shots are the bulk of the data (~1 MB per NBA season), so `sdv_etl.py` pulls
-only the **most recent 5 seasons** by default. Asking for a shot chart outside
-that window returns an empty chart, not an error. To widen it:
-
-```bash
 python etl/sdv_etl.py --league nba --shot-seasons 2010-2026
 ```
 
-Trade-offs versus stats.nba.com:
+Shots are the bulk of the data (~1 MB per NBA season), so only the most recent five
+seasons are pulled by default; `--shot-seasons` widens that.
 
-- **24 seasons instead of one.** Trends and Age Curves need history to say
-  anything; a single season cannot show a trend.
-- **No per-player `ortg`/`drtg`/`pace`.** Dean Oliver's individual formulas need
-  possession-level data ESPN does not publish here, so those are computed per
-  **team** instead. `available_metrics()` filters to columns actually present,
-  so panels adapt rather than break.
-- Player ids are **ESPN ids**, not stats.nba.com ids. The `nba_api` fallback in
-  `backend/live.py` only fires for a league with no local file, and will not
-  resolve these ids.
-- The original stats.nba.com NBA pull is untouched at `data/players.parquet`
-  (un-suffixed). `backend/data.py` prefers `players_nba.parquet` and falls back
-  to it, so renaming files switches sources.
+`etl/nba_etl.py` still targets stats.nba.com directly and is the better source when
+reachable — it carries real per-player `ortg`/`drtg`/`pace` rather than derived
+figures. See the note on blocking below.
 
-Data quirks the ETL handles:
+## Data Coverage
 
-- ESPN files All-Star games under `season_type = 2` next to real regular-season
-  games. Any team-season with fewer than `MIN_TEAM_GAMES` games is dropped,
-  which removes "Team USA"/"TEAM CLARK"/"EAST"/"WEST" without hardcoding names.
-- Free throws carry a placeholder shot coordinate rather than a real location,
-  and are excluded from shot charts.
-- Shot coordinates use `coordinate_x`/`coordinate_y` (court-length and -width in
-  feet), **not** the `_raw` pair — the raw values are integer-quantized and put
-  roughly half of all three-pointers inside the arc.
-- ESPN counts the WNBA Commissioner's Cup final as a regular-season game, so a
-  win total can differ from the official standings by one.
+| | NBA | WNBA |
+|---|---|---|
+| Seasons | 2003–2026 | 2003–2026 |
+| Player-seasons | 12,073 | 3,983 |
+| Distinct players | 2,480 | 993 |
+| Team-seasons | 718 | 302 |
+| Franchises (incl. relocations) | 36 | 23 |
+| Shot locations | 1,171,163 (2022–2026) | 188,088 (2022–2026) |
+| Game rows | 659,034 | 106,895 |
 
-## Notes
+Roughly 12 MB of Parquet in total.
 
-- Shot charts, game logs, and age curves are served from local Parquet. `backend/live.py` still holds `nba_api` fetchers, but they only fire for a league with no local file — with both leagues populated, nothing calls out.
-- Player search (`/api/player-search`) is the exception: it reads `nba_api`'s bundled static rosters, which ship with the package and need no network. It returns names and ids only, no stats.
-- For backward compatibility the NBA falls back to un-suffixed `data/players.parquet` if no `_nba` file exists, so a pre-existing pull keeps working. That original stats.nba.com data is still on disk and is the only source here with per-player `ortg`/`drtg`/`pace`.
-- `app.py` (legacy Streamlit) reads the un-suffixed files directly, so it still shows the original single-season NBA data and is unaffected by any of this.
-- WNBA three-point corner geometry (`three_point_corner` in `backend/leagues.py`) is derived from the FIBA line the league adopted in 2013 and has not been verified against a survey; if shot charts look off at the corners, that constant is the one to adjust.
-- Four Factors' ORB% uses OREB / (OREB + DREB) as a proxy — the full formula requires opponent DREB.
-- `MIN_GP_FOR_RADAR` in `backend/main.py` keeps low-sample players out of the pool used for radar percentile ranks; it falls back to the full pool if the filter leaves fewer than 30 players.
+## Technical Notes / Limitations
+
+**stats.nba.com is blocked from many networks.** Requests to its `/stats/` API
+complete the TCP and TLS handshake and then never respond. That is why the default
+pipeline is sportsdataverse rather than `nba_api`. `backend/live.py` keeps the
+`nba_api` fetchers as a fallback for a league with no local file; with both leagues
+populated nothing calls out.
+
+**No per-player `ortg`/`drtg`/`pace`.** Dean Oliver's individual formulas need
+possession-level data ESPN does not publish here, so those are computed per *team*.
+`available_metrics()` filters to columns actually present, so panels adapt rather
+than break. The original stats.nba.com pull is still on disk at the un-suffixed
+`data/players.parquet`, and `backend/data.py` falls back to it when no `_nba` file
+exists — renaming files switches sources.
+
+**Player ids are ESPN ids**, not stats.nba.com ids, so the `nba_api` fallback cannot
+resolve them.
+
+**Season labels mean different things per league.** Both use a plain year, but an NBA
+season is named for the year it *ends*:
+
+| Label | NBA | WNBA |
+|---|---|---|
+| `2024` | the 2023-24 season (Oct 2023 – Apr 2024) | the 2024 season (May – Sep 2024) |
+
+**ESPN data quirks the ETL handles:**
+
+- All-Star games are filed under `season_type = 2` beside real regular-season games. Any team-season with fewer than `MIN_TEAM_GAMES` games is dropped, which removes "Team USA" / "TEAM CLARK" / "EAST" / "WEST" without hardcoding names.
+- Free throws carry a placeholder shot coordinate rather than a real location, and are excluded from shot charts.
+- Shot coordinates use `coordinate_x`/`coordinate_y`, **not** the `_raw` pair — the raw values are integer-quantized and put roughly half of all three-pointers inside the arc.
+- ESPN counts the WNBA Commissioner's Cup final as a regular-season game, so a win total can differ from the official standings by one.
+- One NBA team name arrives with an embedded carriage return (`NO/Oklahoma City\r\n Hornets`) and shows up as a broken entry in team pickers.
+
+**Other caveats:**
+
+- Four Factors' ORB% uses `OREB / (OREB + DREB)` as a proxy; the full formula needs opponent DREB.
+- WNBA three-point corner geometry (`three_point_corner` in `backend/leagues.py`) is derived from the FIBA line adopted in 2013 and has not been verified against a survey.
+- Cosine similarity over eight standardized features tends to cluster scores in the high 90s. The *ranking* is meaningful; the absolute percentage is not a probability.
+- `MIN_GP_FOR_POOL` in `backend/analytics.py` keeps low-sample players out of percentile pools, falling back to the full pool if the filter leaves fewer than 30 players.

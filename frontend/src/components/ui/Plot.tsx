@@ -7,6 +7,11 @@ type Props = {
   config?: any;
   className?: string;
   height?: number | string;
+  /**
+   * Shown centred when `data` is empty. The chart still renders its axes, so
+   * the shape of the answer is visible before anything is selected.
+   */
+  placeholder?: string;
 };
 
 /** Trace colors, assigned by trace index. Exported so a custom legend can
@@ -56,14 +61,47 @@ function deepMerge<T>(a: any, b: any): T {
   return out;
 }
 
-export function Plot({ data, layout, config, className, height = 420 }: Props) {
+export function Plot({ data, layout, config, className, height = 420, placeholder }: Props) {
   const ref = useRef<HTMLDivElement>(null);
   useEffect(() => {
     if (!ref.current) return;
-    const mergedLayout = deepMerge(makeBaseLayout(), layout);
-    const mergedConfig = deepMerge(baseConfig, config);
-    Plotly.react(ref.current, data, mergedLayout, mergedConfig);
-  }, [data, layout, config]);
+    const empty = !data || data.length === 0;
+    const mergedLayout: any = deepMerge(makeBaseLayout(), layout);
+    const mergedConfig: any = deepMerge(baseConfig, config);
+    if (empty && placeholder) {
+      mergedLayout.annotations = [
+        ...(mergedLayout.annotations ?? []),
+        {
+          xref: "paper", yref: "paper", x: 0.5, y: 0.5,
+          xanchor: "center", yanchor: "middle",
+          text: placeholder, showarrow: false,
+          font: { color: "#6b7685", size: 13 },
+        },
+      ];
+      // Nothing to zoom or download yet.
+      mergedConfig.displayModeBar = false;
+      mergedLayout.showlegend = false;
+    }
+    const el = ref.current;
+    Plotly.react(el, data, mergedLayout, mergedConfig).then(() => {
+      // `responsive` only reacts to window resizes. When the container itself
+      // changes size — a height prop that grows once data arrives — Plotly keeps
+      // its first measurement and the chart is drawn short inside a taller box.
+      Plotly.Plots.resize(el);
+    });
+  }, [data, layout, config, placeholder]);
+
+  // Same problem from the other direction: the card can be resized by layout
+  // changes that never touch this component's props.
+  useEffect(() => {
+    const el = ref.current;
+    if (!el || typeof ResizeObserver === "undefined") return;
+    const ro = new ResizeObserver(() => {
+      if ((el as any)._fullLayout) Plotly.Plots.resize(el);
+    });
+    ro.observe(el);
+    return () => ro.disconnect();
+  }, []);
 
   useEffect(() => {
     const el = ref.current;

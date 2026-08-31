@@ -1,165 +1,357 @@
 import { useEffect, useMemo, useState } from "react";
-import { api, type Meta } from "@/lib/api";
+import { api, type Meta, type PlayerSeason } from "@/lib/api";
 import { Card, CardBody, CardHeader } from "@/components/ui/Card";
 import { MultiSelect } from "@/components/ui/MultiSelect";
+import { Select } from "@/components/ui/Select";
 import { Plot } from "@/components/ui/Plot";
-import { cn } from "@/lib/cn";
-import { playerAvatar } from "@/components/ui/Avatar";
+import { PlayerSeasonSelector, emptySelection } from "@/components/ui/PlayerSeasonSelector";
 import { PlayerLegend } from "@/components/ui/PlayerLegend";
+import { playerAvatar } from "@/components/ui/Avatar";
+import { formatDelta, formatValue, label, ordinal, shortLabel, sortMetrics } from "@/lib/metrics";
+import { cn } from "@/lib/cn";
+
+const MODES = [
+  { v: "season", label: "Single season" },
+  { v: "career", label: "Career" },
+] as const;
+
+const MAX = 5;
 
 export function Compare({ meta }: { meta: Meta }) {
   const avatar = playerAvatar(meta);
-  const [players, setPlayers] = useState<string[]>([]);
+  const [mode, setMode] = useState<"season" | "career">("season");
+  const [picks, setPicks] = useState<PlayerSeason[]>([{ ...emptySelection }]);
   const [metrics, setMetrics] = useState<string[]>([]);
   const [view, setView] = useState<"radar" | "bar">("radar");
+  const [careerMetric, setCareerMetric] = useState("pts");
   const [data, setData] = useState<any>(null);
-  const [loading, setLoading] = useState(false);
+  const [sort, setSort] = useState<{ key: string; dir: 1 | -1 } | null>(null);
+  const [err, setErr] = useState<string | null>(null);
+
+  const ready = picks.filter((p) => p.playerId && (mode === "career" || p.season));
 
   useEffect(() => {
-    if (players.length === 0 || metrics.length === 0) {
+    if (ready.length === 0 || (mode === "season" && metrics.length === 0)) {
       setData(null);
       return;
     }
-    setLoading(true);
+    setErr(null);
     api
       .compare({
-        players,
-        metrics,
-        seasonLo: meta.seasons[0],
-        seasonHi: meta.seasons[meta.seasons.length - 1],
+        selections: ready.map((p) => ({ player_id: p.playerId!, season: p.season || undefined })),
+        metrics: mode === "career" ? [careerMetric] : metrics,
         league: meta.league,
+        mode,
       })
       .then(setData)
-      .catch(() => setData(null))
-      .finally(() => setLoading(false));
-  }, [players, metrics, meta.seasons, meta.league]);
+      .catch((e) => {
+        setErr(e.message);
+        setData(null);
+      });
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [JSON.stringify(ready), JSON.stringify(metrics), mode, careerMetric, meta.league]);
 
-  // Players in trace order, for the face legend. Only the radar view maps one
-  // trace per player; the bar and small-multiple views key traces by metric.
-  const legendNames = useMemo<string[]>(() => {
-    if (!data?.radar || !data.single_season || view !== "radar") return [];
-    return Object.keys(data.radar.values as Record<string, number[]>);
-  }, [data, view]);
+  const rows = data?.mode === "season" ? data.rows ?? [] : [];
+  const curves = data?.mode === "career" ? data.curves ?? [] : [];
 
-  const traces = useMemo(() => {
-    if (!data?.rows?.length) return [];
-    if (data.single_season && view === "radar" && data.radar) {
-      return Object.entries(data.radar.values as Record<string, number[]>).map(([name, vals]) => ({
+  const setPick = (i: number, v: PlayerSeason) =>
+    setPicks((ps) => ps.map((p, idx) => (idx === i ? v : p)));
+  const addPick = () => setPicks((ps) => (ps.length >= MAX ? ps : [...ps, { ...emptySelection }]));
+  const removePick = (i: number) =>
+    setPicks((ps) => (ps.length === 1 ? [{ ...emptySelection }] : ps.filter((_, idx) => idx !== i)));
+
+  // --- single-season charts -------------------------------------------------
+  const seasonTraces = useMemo(() => {
+    if (!rows.length) return [];
+    if (view === "radar" && data?.radar) {
+      const feats: string[] = data.radar.features;
+      return Object.entries(data.radar.values as Record<string, number[]>).map(([key, vals]) => ({
         type: "scatterpolar",
-        name,
+        name: key,
         r: [...vals, vals[0]],
-        theta: [...data.radar.features, data.radar.features[0]],
+        theta: [...feats.map(shortLabel), shortLabel(feats[0])],
         fill: "toself",
-        opacity: 0.55,
+        opacity: 0.5,
+        hovertemplate: `%{theta}: %{r:.0%} percentile<extra>${key}</extra>`,
       }));
     }
-    if (data.single_season) {
-      // grouped bar
-      return metrics.map((m) => ({
-        type: "bar",
-        name: m,
-        x: data.rows.map((r: any) => r.player_name),
-        y: data.rows.map((r: any) => r[m]),
-      }));
-    }
-    // multi-season: small multiples by metric, lines per player
-    return metrics.flatMap((m, i) =>
-      players.map((p) => ({
-        type: "scatter",
-        mode: "lines+markers",
-        name: `${p} · ${m}`,
-        x: data.rows.filter((r: any) => r.player_name === p).map((r: any) => r.season),
-        y: data.rows.filter((r: any) => r.player_name === p).map((r: any) => r[m]),
-        xaxis: `x${i + 1}`,
-        yaxis: `y${i + 1}`,
-        legendgroup: p,
-        showlegend: i === 0,
-      }))
-    );
-  }, [data, metrics, players, view]);
+    return (data?.metrics ?? []).map((m: string) => ({
+      type: "bar",
+      name: shortLabel(m),
+      x: rows.map((r: any) => r.key),
+      y: rows.map((r: any) => r.values[m]),
+      hovertemplate: `%{x}<br>${label(m)}: %{y}<extra></extra>`,
+    }));
+  }, [rows, view, data]);
 
-  const layout = useMemo(() => {
-    if (!data?.rows?.length) return {};
-    if (data.single_season && view === "radar") {
-      return {
-        polar: {
-          bgcolor: "rgba(0,0,0,0)",
-          radialaxis: { range: [0, 1], gridcolor: "#1f2630", color: "#8a94a2" },
-          angularaxis: { gridcolor: "#1f2630", color: "#cbd3de" },
-        },
-        margin: { t: 30, l: 30, r: 30, b: 30 },
-      };
-    }
-    if (data.single_season) return { barmode: "group" };
-    // facets
-    const n = metrics.length;
-    const layout: any = { grid: { rows: n, columns: 1, pattern: "independent" }, height: Math.min(900, 240 * n) };
-    metrics.forEach((m, i) => {
-      layout[`yaxis${i + 1}`] = { title: m, gridcolor: "#1f2630" };
-      layout[`xaxis${i + 1}`] = { gridcolor: "#1f2630", type: "category", nticks: 10, tickangle: 0 };
+  const careerTraces = useMemo(() => {
+    if (!curves.length) return [];
+    const useAge = curves.every((c: any) => c.has_age);
+    return curves.map((c: any) => ({
+      type: "scatter",
+      mode: "lines+markers",
+      name: c.player_name,
+      x: c.points.map((p: any) => (useAge ? p.age : p.season)),
+      y: c.points.map((p: any) => p[careerMetric]),
+      hovertemplate: `${useAge ? "age %{x}" : "%{x}"}: %{y}<extra>${"%{fullData.name}"}</extra>`,
+    }));
+  }, [curves, careerMetric]);
+
+  const useAge = curves.length > 0 && curves.every((c: any) => c.has_age);
+
+  const sortedRows = useMemo(() => {
+    if (!sort) return rows;
+    return [...rows].sort((a: any, b: any) => {
+      const x = a.values[sort.key], y = b.values[sort.key];
+      if (x == null) return 1;
+      if (y == null) return -1;
+      return x === y ? 0 : (x < y ? -1 : 1) * sort.dir;
     });
-    return layout;
-  }, [data, metrics, view]);
+  }, [rows, sort]);
+
+  const metricOptions = sortMetrics(meta.metrics);
 
   return (
     <div className="space-y-4">
       <Card>
-        <CardHeader title="Player comparison" subtitle="Compare up to 5 players on any subset of metrics" />
-        <CardBody className="space-y-4">
-          <div className="grid gap-3 md:grid-cols-2">
-            <div>
-              <div className="label mb-1.5">Players (up to 5)</div>
-              <MultiSelect options={meta.players} value={players} onChange={setPlayers} max={5} renderAvatar={avatar} />
-            </div>
-            <div>
-              <div className="label mb-1.5">Metrics</div>
-              <MultiSelect options={meta.metrics} value={metrics} onChange={setMetrics} />
-            </div>
-          </div>
-          {data?.single_season && (
-            <div className="flex items-center gap-2">
-              {(["radar", "bar"] as const).map((v) => (
+        <CardHeader
+          title="Compare player-seasons"
+          subtitle="Any player in any season against any other — 2016 Curry next to 2026 Doncic."
+          right={
+            <div className="flex gap-4 text-sm">
+              {MODES.map((m) => (
                 <button
-                  key={v}
-                  onClick={() => setView(v)}
-                  className={cn("btn", view === v ? "btn-primary" : "btn-ghost")}
+                  key={m.v}
+                  onClick={() => setMode(m.v)}
+                  className={cn(
+                    "border-b-2 pb-0.5 transition",
+                    mode === m.v ? "border-accent text-ink" : "border-transparent text-mute hover:text-ink"
+                  )}
                 >
-                  {v === "radar" ? "Radar" : "Bars"}
+                  {m.label}
                 </button>
               ))}
             </div>
-          )}
+          }
+        />
+        <CardBody className="space-y-3">
+          {picks.map((p, i) => (
+            <div key={i} className="flex items-end gap-2">
+              <PlayerSeasonSelector
+                meta={meta}
+                value={p}
+                onChange={(v) => setPick(i, v)}
+                seasonless={mode === "career"}
+                playerLabel={i === 0 ? "Player" : ""}
+                className="grid flex-1 gap-3 md:grid-cols-2"
+              />
+              <button
+                onClick={() => removePick(i)}
+                title="Remove"
+                className="h-[42px] border border-border px-3 text-mute transition hover:text-ink"
+              >
+                ×
+              </button>
+            </div>
+          ))}
+          <div className="flex items-center gap-4">
+            <button
+              onClick={addPick}
+              disabled={picks.length >= MAX}
+              className="btn btn-ghost disabled:opacity-40"
+            >
+              + Add player
+            </button>
+            {mode === "season" ? (
+              <div className="flex-1">
+                <div className="label mb-1.5">Metrics</div>
+                <MultiSelect
+                  options={metricOptions}
+                  value={metrics}
+                  onChange={setMetrics}
+                  renderLabel={label}
+                />
+              </div>
+            ) : (
+              <div className="w-56">
+                <div className="label mb-1.5">Metric</div>
+                <Select
+                  value={careerMetric}
+                  onChange={setCareerMetric}
+                  options={metricOptions.map((k) => ({ value: k, label: label(k) }))}
+                />
+              </div>
+            )}
+          </div>
+          {err && <div className="text-sm text-bad">{err}</div>}
         </CardBody>
       </Card>
 
-      <Card>
-        <CardHeader
-          title={data?.season_label ? `Season: ${data.season_label}` : "Across seasons"}
-          subtitle={
-            data?.single_season && view === "radar"
-              ? "Values are league-normalized (0–1). drtg and tov are inverted so larger = better."
-              : undefined
-          }
-        />
-        <CardBody>
-          {loading && <div className="text-sm text-mute">Loading…</div>}
-          {!loading && !traces.length && (
-            <div className="grid place-items-center py-10 text-sm text-mute">
-              Pick at least one player and one metric.
-            </div>
-          )}
-          {legendNames.length > 0 && (
-            <PlayerLegend names={legendNames} renderAvatar={avatar} className="mb-1 px-1" />
-          )}
-          {traces.length > 0 && (
-            <Plot
-              data={traces as any}
-              layout={{ ...(layout as any), showlegend: legendNames.length === 0 }}
-              height={Math.max(460, (layout as any).height ?? 460)}
+      {mode === "season" ? (
+        <>
+          <Card>
+            <CardHeader
+              title={view === "radar" ? "Percentile profile" : "Raw values"}
+              subtitle={
+                view === "radar"
+                  ? "Each axis is a league percentile within that player's own season, so eras compare fairly."
+                  : "Per-game values as recorded."
+              }
+              right={
+                <div className="flex gap-4 text-sm">
+                  {(["radar", "bar"] as const).map((v) => (
+                    <button
+                      key={v}
+                      onClick={() => setView(v)}
+                      className={cn(
+                        "border-b-2 pb-0.5 transition",
+                        view === v ? "border-accent text-ink" : "border-transparent text-mute hover:text-ink"
+                      )}
+                    >
+                      {v === "radar" ? "Radar" : "Bars"}
+                    </button>
+                  ))}
+                </div>
+              }
             />
-          )}
-        </CardBody>
-      </Card>
+            <CardBody>
+              {view === "radar" && rows.length > 0 && (
+                <PlayerLegend
+                  names={rows.map((r: any) => r.key)}
+                  renderAvatar={(name, size) =>
+                    avatar(rows.find((r: any) => r.key === name)?.player_name ?? name, size)
+                  }
+                  className="mb-2 px-1"
+                />
+              )}
+              <Plot
+                data={seasonTraces as any}
+                layout={
+                  view === "radar"
+                    ? {
+                        showlegend: false,
+                        polar: {
+                          bgcolor: "rgba(0,0,0,0)",
+                          radialaxis: { range: [0, 1], tickformat: ".0%", gridcolor: "#1f2630", color: "#8a94a2" },
+                          angularaxis: { gridcolor: "#1f2630", color: "#cbd3de" },
+                        },
+                        margin: { t: 30, l: 40, r: 40, b: 30 },
+                      }
+                    : { barmode: "group", margin: { t: 20 }, xaxis: { type: "category" }, yaxis: { title: "Value" } }
+                }
+                height={460}
+                placeholder="Add player-seasons and pick metrics"
+              />
+            </CardBody>
+          </Card>
+
+          <Card>
+            <CardHeader
+              title="Stat table"
+              subtitle="Value, league percentile for that season, and the gap to that season's league average."
+            />
+            <CardBody className="p-0">
+              <div className="overflow-x-auto">
+                <table className="w-full text-sm">
+                  <thead>
+                    <tr className="text-left text-xs uppercase tracking-wider text-mute">
+                      <th className="px-4 py-2 font-medium">Player-season</th>
+                      {(data?.metrics ?? []).map((m: string) => (
+                        <th key={m} className="px-3 py-2 text-right font-medium">
+                          <button
+                            onClick={() =>
+                              setSort((s) =>
+                                s && s.key === m ? { key: m, dir: (s.dir * -1) as 1 | -1 } : { key: m, dir: -1 }
+                              )
+                            }
+                            className={cn("hover:text-ink", sort?.key === m && "text-accent")}
+                          >
+                            {shortLabel(m)}
+                            {sort?.key === m ? (sort.dir === -1 ? " ↓" : " ↑") : ""}
+                          </button>
+                        </th>
+                      ))}
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {sortedRows.length === 0 && (
+                      <tr>
+                        <td className="px-4 py-6 text-mute" colSpan={99}>
+                          Add player-seasons and pick metrics.
+                        </td>
+                      </tr>
+                    )}
+                    {sortedRows.map((r: any) => (
+                      <tr key={r.key} className="border-t border-border/60">
+                        <td className="whitespace-nowrap px-4 py-2">
+                          <span className="flex items-center gap-2">
+                            {avatar(r.player_name, 26)}
+                            <span>
+                              {r.key}
+                              <span className="ml-2 text-xs text-mute">{r.team}</span>
+                            </span>
+                          </span>
+                        </td>
+                        {(data?.metrics ?? []).map((m: string) => (
+                          <td key={m} className="px-3 py-2 text-right tabular-nums">
+                            <div>{formatValue(m, r.values[m])}</div>
+                            <div className="text-[11px] text-mute">
+                              {r.percentiles[m] != null ? ordinal(r.percentiles[m]) : "—"}
+                              {r.vs_league[m] != null && (
+                                <span
+                                  title="vs. that season's league average"
+                                  className={r.vs_league[m] >= 0 ? " text-accent2" : " text-bad"}
+                                >
+                                  {" "}
+                                  {formatDelta(m, r.vs_league[m])}
+                                </span>
+                              )}
+                            </div>
+                          </td>
+                        ))}
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            </CardBody>
+          </Card>
+        </>
+      ) : (
+        <Card>
+          <CardHeader
+            title="Career trajectories"
+            subtitle={
+              useAge
+                ? "Metric against age at the start of each season."
+                : "Metric by season — some of these players have no birthdate on file, so age is unavailable."
+            }
+          />
+          <CardBody>
+            {curves.length > 0 && (
+              <PlayerLegend
+                names={curves.map((c: any) => c.player_name)}
+                renderAvatar={avatar}
+                className="mb-2 px-1"
+              />
+            )}
+            <Plot
+              data={careerTraces as any}
+              layout={{
+                showlegend: false,
+                margin: { t: 20 },
+                xaxis: useAge
+                  ? { title: "Age at season start" }
+                  : { title: "Season", type: "category", nticks: 12, tickangle: 0 },
+                yaxis: { title: label(careerMetric) },
+                hovermode: "closest",
+              }}
+              height={480}
+              placeholder="Add players to plot their careers"
+            />
+          </CardBody>
+        </Card>
+      )}
     </div>
   );
 }

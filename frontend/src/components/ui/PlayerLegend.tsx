@@ -24,7 +24,7 @@ export function PlayerLegend({ names, renderAvatar, size = 30, className }: Prop
             {renderAvatar(name, size)}
             <span
               aria-hidden
-              className="absolute -bottom-0.5 -right-0.5 h-2.5 w-2.5 rounded-full ring-2 ring-panel"
+              className="absolute -bottom-0.5 -right-0.5 h-2.5 w-2.5 ring-2 ring-panel"
               style={{ background: traceColor(i) }}
             />
           </span>

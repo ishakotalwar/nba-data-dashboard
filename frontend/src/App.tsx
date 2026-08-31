@@ -1,50 +1,29 @@
-import { useEffect, useState } from "react";
+import { Fragment, useEffect, useState } from "react";
 import * as Tabs from "@radix-ui/react-tabs";
 import { api, type LeagueInfo, type LeagueKey, type Meta } from "./lib/api";
 import { cn } from "./lib/cn";
+import { Players } from "./components/panels/Players";
 import { Compare } from "./components/panels/Compare";
-import { Trends } from "./components/panels/Trends";
-import { Percentiles } from "./components/panels/Percentiles";
 import { Similar } from "./components/panels/Similar";
-import { GameLog } from "./components/panels/GameLog";
-import { AgeCurves } from "./components/panels/AgeCurves";
-import { Teams } from "./components/panels/Teams";
-import { TeamCompare } from "./components/panels/TeamCompare";
-import { ShotChart } from "./components/panels/ShotChart";
+import { TeamsSection } from "./components/panels/TeamsSection";
+import { Explorer } from "./components/panels/Explorer";
+import { ShotAnalysis } from "./components/panels/ShotAnalysis";
 
-type TabDef = { v: string; label: string };
-
-/** Top-level split. Both leagues get the same two sections. */
-const GROUPS: { key: string; label: string; tabs: TabDef[] }[] = [
-  {
-    key: "individual",
-    label: "Individual",
-    tabs: [
-      { v: "compare", label: "Compare" },
-      { v: "trends", label: "Trends" },
-      { v: "pct", label: "Percentiles" },
-      { v: "similar", label: "Similar Players" },
-      { v: "gamelog", label: "Game Log" },
-      { v: "age", label: "Age Curves" },
-      { v: "shots", label: "Shot Chart" },
-    ],
-  },
-  {
-    key: "teams",
-    label: "Teams",
-    tabs: [
-      { v: "teamcompare", label: "Compare Teams" },
-      { v: "teams", label: "Team Profile" },
-    ],
-  },
-];
+/** One flat nav. `group` only draws a separator — it is not a second click. */
+const TABS = [
+  { v: "players", label: "Players", group: "player" },
+  { v: "compare", label: "Compare", group: "player" },
+  { v: "similar", label: "Similarity", group: "player" },
+  { v: "shots", label: "Shot Analysis", group: "player" },
+  { v: "teams", label: "Teams", group: "team" },
+  { v: "explorer", label: "Explorer", group: "team" },
+] as const;
 
 export default function App() {
   const [leagues, setLeagues] = useState<LeagueInfo[] | null>(null);
   const [league, setLeague] = useState<LeagueKey | null>(null);
   const [meta, setMeta] = useState<Meta | null>(null);
   const [err, setErr] = useState<string | null>(null);
-  const [group, setGroup] = useState(GROUPS[0].key);
 
   // Which leagues exist, and which one to open on.
   useEffect(() => {
@@ -69,8 +48,6 @@ export default function App() {
   if (err) return <Bootstrap state="error" msg={err} leagues={leagues} league={league} onLeague={setLeague} />;
   if (!meta || !league) return <Bootstrap state="loading" />;
 
-  const activeTabs = (GROUPS.find((g) => g.key === group) ?? GROUPS[0]).tabs;
-  const has = (v: string) => activeTabs.some((t) => t.v === v);
 
   return (
     <div className="min-h-screen bg-bg">
@@ -80,72 +57,45 @@ export default function App() {
             <div>
               <div className="text-[15px] font-semibold leading-tight">Hoops Data Dashboard</div>
               <div className="text-xs text-mute">
-                {meta.league_label} · {meta.players.length} players ·{" "}
-                {meta.seasons.length} season{meta.seasons.length === 1 ? "" : "s"}
+                {meta.players.length.toLocaleString()} players ·{" "}
+                {meta.seasons.length > 1
+                  ? `${meta.seasons[0]}–${meta.seasons[meta.seasons.length - 1]}`
+                  : meta.seasons[0]}
               </div>
             </div>
           </div>
-          <div className="flex items-center gap-3 text-xs text-mute">
-            <LeagueToggle leagues={leagues} active={league} onChange={setLeague} />
-            <span className="chip">
-              {meta.seasons.length > 1
-                ? `${meta.seasons[0]}–${meta.seasons[meta.seasons.length - 1]}`
-                : meta.seasons[0]}
-            </span>
-          </div>
+          <LeagueToggle leagues={leagues} active={league} onChange={setLeague} />
         </div>
       </header>
 
       <main className="mx-auto max-w-7xl px-6 py-6">
-        <div className="mb-4 flex gap-2" role="tablist" aria-label="Section">
-          {GROUPS.map((g) => (
-            <button
-              key={g.key}
-              role="tab"
-              aria-selected={g.key === group}
-              onClick={() => setGroup(g.key)}
-              className={cn(
-                "rounded-lg border px-4 py-2 text-sm font-medium transition",
-                g.key === group
-                  ? "border-accent/60 bg-accent/15 text-ink"
-                  : "border-border bg-panel text-mute hover:text-ink"
-              )}
-            >
-              {g.label}
-            </button>
-          ))}
-        </div>
-
-        {/* Keying on league + section remounts every panel, clearing player and
-            team picks that don't exist in whatever was switched to. */}
-        <Tabs.Root defaultValue={activeTabs[0].v} key={`${league}:${group}`}>
-          {activeTabs.length > 1 && (
-            <Tabs.List className="no-scrollbar mb-5 flex gap-1 overflow-x-auto rounded-xl border border-border bg-panel p-1">
-              {activeTabs.map((t) => (
+        <Tabs.Root defaultValue="players" key={league}>
+          <Tabs.List className="no-scrollbar mb-6 flex items-center gap-5 overflow-x-auto border-b border-border">
+            {TABS.map((t, i) => (
+              <Fragment key={t.v}>
+                {i > 0 && TABS[i - 1].group !== t.group && (
+                  <span aria-hidden className="h-4 w-px shrink-0 bg-border" />
+                )}
                 <Tabs.Trigger
-                  key={t.v}
                   value={t.v}
                   className={cn(
-                    "whitespace-nowrap rounded-lg px-3.5 py-1.5 text-sm text-mute transition",
-                    "data-[state=active]:bg-accent data-[state=active]:text-black data-[state=active]:shadow",
-                    "hover:text-ink"
+                   "-mb-px whitespace-nowrap border-b-2 border-transparent pb-2.5 text-sm text-mute transition",
+                   "data-[state=active]:border-accent data-[state=active]:text-ink",
+                   "hover:text-ink"
                   )}
                 >
                   {t.label}
                 </Tabs.Trigger>
-              ))}
-            </Tabs.List>
-          )}
+              </Fragment>
+            ))}
+          </Tabs.List>
 
-          {has("compare") && <Tabs.Content value="compare"><Compare meta={meta} /></Tabs.Content>}
-          {has("trends") && <Tabs.Content value="trends"><Trends meta={meta} /></Tabs.Content>}
-          {has("pct") && <Tabs.Content value="pct"><Percentiles meta={meta} /></Tabs.Content>}
-          {has("similar") && <Tabs.Content value="similar"><Similar meta={meta} /></Tabs.Content>}
-          {has("gamelog") && <Tabs.Content value="gamelog"><GameLog meta={meta} /></Tabs.Content>}
-          {has("age") && <Tabs.Content value="age"><AgeCurves meta={meta} /></Tabs.Content>}
-          {has("teams") && <Tabs.Content value="teams"><Teams meta={meta} /></Tabs.Content>}
-          {has("teamcompare") && <Tabs.Content value="teamcompare"><TeamCompare meta={meta} /></Tabs.Content>}
-          {has("shots") && <Tabs.Content value="shots"><ShotChart meta={meta} /></Tabs.Content>}
+          <Tabs.Content value="players"><Players meta={meta} /></Tabs.Content>
+          <Tabs.Content value="compare"><Compare meta={meta} /></Tabs.Content>
+          <Tabs.Content value="similar"><Similar meta={meta} /></Tabs.Content>
+          <Tabs.Content value="shots"><ShotAnalysis meta={meta} /></Tabs.Content>
+          <Tabs.Content value="teams"><TeamsSection meta={meta} /></Tabs.Content>
+          <Tabs.Content value="explorer"><Explorer meta={meta} /></Tabs.Content>
         </Tabs.Root>
       </main>
     </div>
@@ -163,7 +113,7 @@ function LeagueToggle({
 }) {
   if (!leagues || leagues.length < 2) return null;
   return (
-    <div className="flex items-center gap-0.5 rounded-lg border border-border bg-panel p-0.5">
+    <div className="flex items-center gap-4">
       {leagues.map((l) => (
         <button
           key={l.key}
@@ -171,12 +121,12 @@ function LeagueToggle({
           disabled={!l.available && l.key !== active}
           title={l.available ? `Show ${l.label} data` : `No ${l.label} data yet — run the ETL for this league`}
           className={cn(
-            "rounded-md px-2.5 py-1 text-xs font-medium transition",
+           "border-b-2 pb-0.5 text-sm font-medium transition",
             l.key === active
-              ? "bg-accent text-black shadow"
+              ? "border-accent text-ink"
               : l.available
-              ? "text-mute hover:text-ink"
-              : "cursor-not-allowed text-mute/40"
+              ? "border-transparent text-mute hover:text-ink"
+              : "cursor-not-allowed border-transparent text-mute/40"
           )}
         >
           {l.label}

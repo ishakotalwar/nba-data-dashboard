@@ -272,16 +272,33 @@ def build_shots(sh: pd.DataFrame) -> pd.DataFrame:
     return out[(out["x"].between(-250, 250)) & (out["y"].between(-52.5, 417.5))].reset_index(drop=True)
 
 
-def build_bios(core: pd.DataFrame) -> pd.DataFrame:
-    """One birthdate per player, for age curves."""
-    c = core.dropna(subset=["date_of_birth"]).copy()
-    c["birthdate"] = pd.to_datetime(c["date_of_birth"], errors="coerce", utc=True).dt.tz_localize(None)
-    c = c.dropna(subset=["birthdate", "athlete_id"])
-    return (c.sort_values("season")
+def build_bios(core: pd.DataFrame, rows: pd.DataFrame | None = None) -> pd.DataFrame:
+    """One row per player: birthdate plus the bio fields the overview shows."""
+    c = core.dropna(subset=["athlete_id"]).copy()
+    c["birthdate"] = pd.to_datetime(c.get("date_of_birth"), errors="coerce", utc=True).dt.tz_localize(None)
+    # player_core carries both numeric `height`/`weight` and the formatted
+    # `display_*` pair; drop the numeric ones so the rename below can't collide.
+    c = c.drop(columns=[x for x in ("height", "weight") if x in c.columns])
+    keep = {"athlete_id": "player_id", "display_name": "player_name",
+            "display_height": "height", "display_weight": "weight",
+            "birth_city": "birth_city", "birth_country": "birth_country"}
+    have = {k: v for k, v in keep.items() if k in c.columns}
+    bio = (c.sort_values("season")
              .drop_duplicates("athlete_id", keep="last")
-             .rename(columns={"athlete_id": "player_id", "display_name": "player_name"})
-             [["player_id", "player_name", "birthdate"]]
+             .rename(columns=have)[list(have.values()) + ["birthdate"]]
              .astype({"player_id": "int64"}).reset_index(drop=True))
+
+    # Position only exists on the box scores; take the most recent one played.
+    if rows is not None and "athlete_position_name" in rows.columns:
+        pos = (rows.dropna(subset=["athlete_position_name"])
+                   .sort_values(["season", "game_date"])
+                   .drop_duplicates("athlete_id", keep="last")
+                   [["athlete_id", "athlete_position_name"]]
+                   .rename(columns={"athlete_id": "player_id",
+                                    "athlete_position_name": "position"}))
+        pos["player_id"] = pos["player_id"].astype("int64")
+        bio = bio.merge(pos, on="player_id", how="left")
+    return bio
 
 
 def parse_seasons(spec: str | None) -> list[int]:
@@ -347,7 +364,7 @@ def main(argv=None):
 
     print("player bios…")
     try:
-        bios = build_bios(load_seasons(league, "player_core", seasons))
+        bios = build_bios(load_seasons(league, "player_core", seasons), rows)
         write(bios, "player_bio", league, "birthdates")
     except SystemExit as e:
         print(f"  skipped: {e}")

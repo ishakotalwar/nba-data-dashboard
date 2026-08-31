@@ -39,8 +39,8 @@ export function PlayerCombobox({
         <button
           type="button"
           className={cn(
-            "flex h-[42px] w-full items-center gap-2 rounded-lg border border-border bg-bg/60 px-3 text-left text-sm",
-            "hover:border-accent/40 focus:outline-none focus:ring-2 focus:ring-accent/30",
+           "flex h-[42px] w-full items-center gap-2 border border-border bg-bg px-3 text-left text-sm",
+           "hover:border-mute focus:border-accent focus:outline-none",
             className
           )}
         >
@@ -52,7 +52,7 @@ export function PlayerCombobox({
         <Popover.Content
           align="start"
           sideOffset={6}
-          className="z-50 w-[--radix-popover-trigger-width] rounded-lg border border-border bg-panel p-2 shadow-card"
+          className="z-50 w-[--radix-popover-trigger-width] border border-border bg-panel p-2"
           onOpenAutoFocus={(e) => {
             e.preventDefault();
             inputRef.current?.focus();
@@ -80,8 +80,8 @@ export function PlayerCombobox({
                 }}
                 style={{ height: ROW_H }}
                 className={cn(
-                  "flex w-full items-center gap-2 rounded-md px-2 text-left text-sm",
-                  value === o ? "bg-accent/15 text-ink" : "hover:bg-border/60"
+                 "flex w-full items-center gap-2 px-2 text-left text-sm",
+                  value === o ? "bg-border text-ink" : "hover:bg-border/60"
                 )}
               >
                 {renderAvatar?.(o, 30)}
