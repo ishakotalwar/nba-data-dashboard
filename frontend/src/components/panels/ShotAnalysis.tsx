@@ -139,7 +139,6 @@ export function ShotAnalysis({ meta }: { meta: Meta }) {
       <Card>
         <CardHeader
           title="Shot analysis"
-          subtitle="Where the shots come from, how they fall, and how that compares with the rest of the league."
           right={
             <div className="flex gap-4 text-sm">
               {(["hex", "scatter"] as const).map((m) => (
@@ -176,9 +175,7 @@ export function ShotAnalysis({ meta }: { meta: Meta }) {
             lead={a.playerName ? avatar(a.playerName, 40) : undefined}
             title={zonesA ? `${zonesA.season} ${zonesA.player_name}` : "—"}
             subtitle={
-              zonesA
-                ? `${zonesA.total_fga} field goal attempts · ${pct(zonesA.fg_pct)} overall`
-                : "Hex color is this player's accuracy against their own average; size is volume."
+              zonesA ? `${zonesA.total_fga} field goal attempts · ${pct(zonesA.fg_pct)} overall` : undefined
             }
           />
           <CardBody>
@@ -205,7 +202,6 @@ export function ShotAnalysis({ meta }: { meta: Meta }) {
       <Card>
         <CardHeader
           title="Zone breakdown"
-          subtitle="Accuracy by zone against the league average for the same season. Share is the portion of this player's attempts taken from that zone."
         />
         <CardBody className="p-0">
           {zoneRows.length === 0 ? (

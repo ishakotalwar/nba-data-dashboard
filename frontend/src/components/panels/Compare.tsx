@@ -116,7 +116,6 @@ export function Compare({ meta }: { meta: Meta }) {
       <Card>
         <CardHeader
           title="Compare player-seasons"
-          subtitle="Any player in any season against any other — 2016 Curry next to 2026 Doncic."
           right={
             <div className="flex gap-4 text-sm">
               {MODES.map((m) => (
@@ -192,11 +191,6 @@ export function Compare({ meta }: { meta: Meta }) {
           <Card>
             <CardHeader
               title={view === "radar" ? "Percentile profile" : "Raw values"}
-              subtitle={
-                view === "radar"
-                  ? "Each axis is a league percentile within that player's own season, so eras compare fairly."
-                  : "Per-game values as recorded."
-              }
               right={
                 <div className="flex gap-4 text-sm">
                   {(["radar", "bar"] as const).map((v) => (
@@ -248,7 +242,6 @@ export function Compare({ meta }: { meta: Meta }) {
           <Card>
             <CardHeader
               title="Stat table"
-              subtitle="Value, league percentile for that season, and the gap to that season's league average."
             />
             <CardBody className="p-0">
               <div className="overflow-x-auto">
@@ -321,11 +314,6 @@ export function Compare({ meta }: { meta: Meta }) {
         <Card>
           <CardHeader
             title="Career trajectories"
-            subtitle={
-              useAge
-                ? "Metric against age at the start of each season."
-                : "Metric by season — some of these players have no birthdate on file, so age is unavailable."
-            }
           />
           <CardBody>
             {curves.length > 0 && (

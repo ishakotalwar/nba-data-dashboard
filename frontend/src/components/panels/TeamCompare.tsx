@@ -147,7 +147,6 @@ export function TeamCompare({ meta }: { meta: Meta }) {
       <Card>
         <CardHeader
           title="Compare teams"
-          subtitle="Every team in one season, by the rate stats that describe how a team actually plays."
         />
         <CardBody>
           <div className="grid gap-3 md:grid-cols-3">
@@ -163,7 +162,6 @@ export function TeamCompare({ meta }: { meta: Meta }) {
       <Card>
         <CardHeader
           title={season ? `Offense vs. defense — ${season}` : "Offense vs. defense"}
-          subtitle="Dotted lines mark the league average. Color shows net rating; the vertical axis is inverted so up-and-right is the strong quadrant."
         />
         <CardBody>
           <Plot data={traces as any} layout={layout} height={480} placeholder="Select a season" />
@@ -173,7 +171,6 @@ export function TeamCompare({ meta }: { meta: Meta }) {
       <Card>
         <CardHeader
           title={season ? `League table — ${season}` : "League table"}
-          subtitle="Click a column to sort."
         />
         <CardBody className="p-0">
           {sorted.length === 0 ? (

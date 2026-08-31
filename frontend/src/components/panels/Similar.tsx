@@ -70,7 +70,6 @@ export function Similar({ meta }: { meta: Meta }) {
       <Card>
         <CardHeader
           title="Find similar seasons"
-          subtitle="Compares one player-season against every qualifying season in the dataset, not just the current year."
         />
         <CardBody className="space-y-4">
           <PlayerSeasonSelector meta={meta} value={sel} onChange={setSel} />
@@ -150,7 +149,6 @@ export function Similar({ meta }: { meta: Meta }) {
         <Card className="lg:col-span-3">
           <CardHeader
             title="Most similar seasons"
-            subtitle="Ranked by weighted cosine similarity over standardized features."
           />
           <CardBody className="p-0">
             {matches.length === 0 ? (
@@ -193,7 +191,6 @@ export function Similar({ meta }: { meta: Meta }) {
         <Card className="lg:col-span-2">
           <CardHeader
             title="Profile overlay"
-            subtitle="Percentile within the searched pool; larger area = stronger across the board."
           />
           <CardBody>
             {radarTraces.length > 0 && (
@@ -224,7 +221,7 @@ export function Similar({ meta }: { meta: Meta }) {
 
       {matches.length > 0 && (
         <Card>
-          <CardHeader title="Underlying numbers" subtitle="The features similarity is computed from." />
+          <CardHeader title="Underlying numbers" />
           <CardBody className="p-0">
             <div className="overflow-x-auto">
               <table className="w-full text-sm">

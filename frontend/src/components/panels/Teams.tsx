@@ -95,7 +95,7 @@ export function Teams({ meta }: { meta: Meta }) {
   return (
     <div className="space-y-4">
       <Card>
-        <CardHeader title="Teams" subtitle="Rate stats over time, plus Dean Oliver's Four Factors against the league" />
+        <CardHeader title="Teams" />
         <CardBody>
           <div className="grid gap-3 md:grid-cols-2">
             <div>
@@ -112,7 +112,7 @@ export function Teams({ meta }: { meta: Meta }) {
 
       <div className="grid gap-4 lg:grid-cols-2">
         <Card>
-          <CardHeader title="Offensive & defensive rating" subtitle="Points scored / allowed per 100 possessions" />
+          <CardHeader title="Offensive & defensive rating" />
           <CardBody>
             <Plot
               data={ratingTrace as any}
@@ -127,7 +127,7 @@ export function Teams({ meta }: { meta: Meta }) {
           </CardBody>
         </Card>
         <Card>
-          <CardHeader title="Net rating" subtitle="ORtg − DRtg; above zero outscores its opponents" />
+          <CardHeader title="Net rating" />
           <CardBody>
             <Plot
               data={netTrace as any}
@@ -145,7 +145,7 @@ export function Teams({ meta }: { meta: Meta }) {
       </div>
 
       <Card>
-        <CardHeader title="Pace" subtitle="Possessions per game" />
+        <CardHeader title="Pace" />
         <CardBody>
           <Plot
             data={paceTrace as any}
@@ -164,7 +164,6 @@ export function Teams({ meta }: { meta: Meta }) {
       <Card>
         <CardHeader
           title={season ? `Four Factors — ${team}, ${season}` : "Four Factors"}
-          subtitle="eFG%, TOV%, ORB%, FT rate explain ~95% of winning. ORB% is OREB/(OREB+DREB) as a proxy."
         />
         <CardBody>
           <Plot

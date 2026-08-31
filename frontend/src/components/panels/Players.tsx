@@ -85,7 +85,7 @@ export function Players({ meta }: { meta: Meta }) {
   return (
     <div className="space-y-4">
       <Card>
-        <CardHeader title="Player overview" subtitle="One player-season: headline stats, where they rank, and how they got here." />
+        <CardHeader title="Player overview" />
         <CardBody>
           <PlayerSeasonSelector meta={meta} value={sel} onChange={setSel} onInfo={setInfo} />
           {err && <div className="mt-3 text-sm text-bad">{err}</div>}
@@ -149,7 +149,6 @@ export function Players({ meta }: { meta: Meta }) {
       <Card>
         <CardHeader
           title="Performance percentiles"
-          subtitle="Rank against every qualifying player in the same season. Turnovers and defensive rating are inverted, so longer is always better."
         />
         <CardBody>
           <Plot
@@ -192,7 +191,6 @@ export function Players({ meta }: { meta: Meta }) {
       <Card>
         <CardHeader
           title="Career trend"
-          subtitle="Season by season for the selected player."
           right={
             <div className="w-44">
               <Select
@@ -222,7 +220,6 @@ export function Players({ meta }: { meta: Meta }) {
       <Card>
         <CardHeader
           title="Recent games"
-          subtitle="Last 10 games played, with a 5-game rolling scoring average."
         />
         <CardBody className="space-y-4">
           <Plot

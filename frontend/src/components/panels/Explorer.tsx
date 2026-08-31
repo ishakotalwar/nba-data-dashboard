@@ -83,7 +83,6 @@ export function Explorer({ meta }: { meta: Meta }) {
       <Card>
         <CardHeader
           title="Stat explorer"
-          subtitle="Query every player-season in the dataset. Stack as many conditions as you like."
         />
         <CardBody className="space-y-4">
           <div className="grid gap-3 md:grid-cols-3 lg:grid-cols-6">
@@ -172,7 +171,7 @@ export function Explorer({ meta }: { meta: Meta }) {
       <Card>
         <CardHeader
           title={data ? `${data.total.toLocaleString()} player-seasons` : "Results"}
-          subtitle={data ? `Page ${data.page} of ${data.pages}` : "Set your conditions and run the query."}
+          subtitle={data ? `Page ${data.page} of ${data.pages}` : undefined}
           right={
             data && data.pages > 1 ? (
               <div className="flex items-center gap-2 text-sm">

@@ -41,7 +41,6 @@ export function TeamRankings({ meta }: { meta: Meta }) {
     <Card>
       <CardHeader
         title="All-time leaders"
-        subtitle={`Best team-seasons in the dataset (${span}). Minimum 20 games, so shortened seasons still qualify.`}
         right={
           <div className="w-56">
             <Select value={metric} onChange={setMetric} options={METRICS} />

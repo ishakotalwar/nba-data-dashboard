@@ -77,7 +77,7 @@ export function TeamMatchup({ meta }: { meta: Meta }) {
   return (
     <div className="space-y-4">
       <Card>
-        <CardHeader title="Team matchup" subtitle="Any team-season against any other — 2016 Warriors next to 2026 Thunder." />
+        <CardHeader title="Team matchup" />
         <CardBody className="space-y-3">
           {side(a, setA, "Team")}
           {side(b, setB, "Against")}
@@ -87,7 +87,7 @@ export function TeamMatchup({ meta }: { meta: Meta }) {
 
       <div className="grid gap-4 lg:grid-cols-2">
         <Card>
-          <CardHeader title="Side by side" subtitle="Each value with its gap to that season's league average." />
+          <CardHeader title="Side by side" />
           <CardBody className="p-0">
             {!data ? (
               <div className="px-5 py-8 text-sm text-mute">Pick two team-seasons.</div>
@@ -157,7 +157,7 @@ export function TeamMatchup({ meta }: { meta: Meta }) {
         </Card>
 
         <Card>
-          <CardHeader title="Four Factors" subtitle="The four things that decide games, head to head." />
+          <CardHeader title="Four Factors" />
           <CardBody>
             <Plot
               data={(ffTraces || []) as any}
