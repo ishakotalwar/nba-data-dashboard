@@ -80,6 +80,17 @@ export const api = {
   player: (playerId: number, league: LeagueKey) =>
     fetch(`${BASE}/player/${playerId}?${q_(league)}`).then((r) => j<PlayerInfo>(r)),
 
+  /** Natural-language question -> structured query -> grounded result. */
+  ask: (question: string, league: LeagueKey) =>
+    fetch(`${BASE}/ask`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ question, league }),
+    }).then((r) => j<any>(r)),
+
+  askCapabilities: (league: LeagueKey) =>
+    fetch(`${BASE}/ask/capabilities?${q_(league)}`).then((r) => j<any>(r)),
+
   playerSeason: (playerId: number, season: string, league: LeagueKey) =>
     fetch(`${BASE}/player/${playerId}/season/${encodeURIComponent(season)}?${q_(league)}`)
       .then((r) => j<any>(r)),

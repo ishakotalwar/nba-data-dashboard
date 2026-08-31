@@ -18,10 +18,22 @@ const MODES = [
 
 const MAX = 5;
 
-export function Compare({ meta }: { meta: Meta }) {
+/** `seed` carries the player-seasons Ask Full Court just compared. */
+export function Compare({ meta, seed }: { meta: Meta; seed?: any }) {
   const avatar = playerAvatar(meta);
   const [mode, setMode] = useState<"season" | "career">("season");
   const [picks, setPicks] = useState<PlayerSeason[]>([{ ...emptySelection }]);
+
+  useEffect(() => {
+    if (!Array.isArray(seed?.players) || seed.players.length === 0) return;
+    setPicks(
+      seed.players.map((p: any) => ({
+        playerId: p.player_id,
+        playerName: p.player_name ?? "",
+        season: String(p.season),
+      })),
+    );
+  }, [seed]);
   const [metrics, setMetrics] = useState<string[]>([]);
   const [view, setView] = useState<"radar" | "bar">("radar");
   const [careerMetric, setCareerMetric] = useState("pts");

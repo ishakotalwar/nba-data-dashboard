@@ -2,16 +2,47 @@
 @tailwind components;
 @tailwind utilities;
 
-:root {
+:root,
+:root[data-theme="dark"] {
   color-scheme: dark;
+  --c-bg: 11 13 16;
+  --c-panel: 18 22 28;
+  --c-border: 31 38 48;
+  --c-ink: 230 234 240;
+  --c-mute: 138 148 162;
+  --c-accent: 255 106 61;
+  --c-accent2: 77 171 255;
+  --c-good: 26 152 80;
+  --c-bad: 215 48 39;
+  --c-on-accent: 0 0 0;
+  --c-grid: 31 38 48;
+  --c-axis: 42 50 64;
+}
+
+:root[data-theme="light"] {
+  color-scheme: light;
+  --c-bg: 247 248 250;
+  --c-panel: 255 255 255;
+  --c-border: 223 228 236;
+  --c-ink: 17 24 33;
+  --c-mute: 95 107 124;
+  /* Both accents are darkened from their dark-mode values: the originals are
+     tuned for a near-black ground and fail contrast on white. */
+  --c-accent: 214 74 30;
+  --c-accent2: 24 104 190;
+  --c-good: 21 128 68;
+  --c-bad: 190 42 32;
+  --c-on-accent: 255 255 255;
+  --c-grid: 226 231 238;
+  --c-axis: 203 211 222;
 }
 
 html,
 body,
 #root {
   height: 100%;
-  background: #0b0d10;
-  color: #e6eaf0;
+  background: rgb(var(--c-bg));
+  color: rgb(var(--c-ink));
   font-feature-settings: "cv11", "ss01", "ss03";
 }
 
@@ -26,10 +57,10 @@ body {
   height: 10px;
 }
 ::-webkit-scrollbar-thumb {
-  background: #1f2630;
+  background: rgb(var(--c-border));
 }
 ::-webkit-scrollbar-thumb:hover {
-  background: #2a3240;
+  background: rgb(var(--c-axis));
 }
 
 /* plotly dark fix */
@@ -69,7 +100,7 @@ body {
     @apply inline-flex items-center justify-center gap-2 px-3.5 py-2 text-sm font-medium transition;
   }
   .btn-primary {
-    @apply bg-accent text-black hover:brightness-110 active:brightness-95;
+    @apply bg-accent text-onAccent hover:brightness-110 active:brightness-95;
   }
   .btn-ghost {
     @apply border border-border bg-panel text-ink hover:bg-border;

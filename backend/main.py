@@ -11,6 +11,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
 
 from .routers import (
+    ask as ask_router,
     compare as compare_router,
     explorer as explorer_router,
     meta as meta_router,
@@ -42,6 +43,7 @@ def _missing_data(request: Request, exc: FileNotFoundError):
 
 for router in (
     meta_router.router,
+    ask_router.router,
     players_router.router,
     compare_router.router,
     similarity_router.router,

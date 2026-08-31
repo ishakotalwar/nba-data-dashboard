@@ -3,16 +3,20 @@ export default {
   content: ["./index.html", "./src/**/*.{ts,tsx}"],
   theme: {
     extend: {
+      // Every colour resolves through a CSS variable (defined per theme in
+      // index.css), so light/dark is a single attribute on <html> rather than
+      // a conditional in each component. <alpha-value> keeps bg-panel/60 etc.
       colors: {
-        bg: "#0b0d10",
-        panel: "#12161c",
-        border: "#1f2630",
-        ink: "#e6eaf0",
-        mute: "#8a94a2",
-        accent: "#ff6a3d",
-        accent2: "#4dabff",
-        good: "#1a9850",
-        bad: "#d73027",
+        bg: "rgb(var(--c-bg) / <alpha-value>)",
+        panel: "rgb(var(--c-panel) / <alpha-value>)",
+        border: "rgb(var(--c-border) / <alpha-value>)",
+        ink: "rgb(var(--c-ink) / <alpha-value>)",
+        mute: "rgb(var(--c-mute) / <alpha-value>)",
+        accent: "rgb(var(--c-accent) / <alpha-value>)",
+        accent2: "rgb(var(--c-accent2) / <alpha-value>)",
+        good: "rgb(var(--c-good) / <alpha-value>)",
+        bad: "rgb(var(--c-bad) / <alpha-value>)",
+        onAccent: "rgb(var(--c-on-accent) / <alpha-value>)",
       },
       fontFamily: {
         sans: [

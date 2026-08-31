@@ -18,7 +18,8 @@ const OPS = [
   { value: "between", label: "between" },
 ];
 
-export function Explorer({ meta }: { meta: Meta }) {
+/** `seed` is the ExplorerRequest that Ask Full Court just executed. */
+export function Explorer({ meta, seed }: { meta: Meta; seed?: any }) {
   const avatar = playerAvatar(meta);
   const seasons = meta.seasons;
   const seasonOptions = seasons.map((s) => ({ value: s, label: formatSeason(s, meta.season_format) }));
@@ -37,12 +38,43 @@ export function Explorer({ meta }: { meta: Meta }) {
   const [dir, setDir] = useState<"asc" | "desc">("desc");
   const [page, setPage] = useState(1);
   const [teams, setTeams] = useState<string[]>([]);
+  useEffect(() => {
+    if (!seed) return;
+    if (seed.season_from) setFrom(String(seed.season_from));
+    if (seed.season_to) setTo(String(seed.season_to));
+    if (Array.isArray(seed.filters) && seed.filters.length) {
+      setFilters(
+        seed.filters.map((f: any) => ({
+          metric: f.metric,
+          op: f.op,
+          value: f.value,
+          value2: f.value2 ?? undefined,
+        })),
+      );
+    }
+    if (seed.sort) setSort(seed.sort);
+    if (seed.dir) setDir(seed.dir);
+    setPage(1);
+    setSeedPending(true);
+  }, [seed]);
+
   const [data, setData] = useState<any>(null);
   const [err, setErr] = useState<string | null>(null);
+  // Set when a seed lands, cleared once the query it implies has been run.
+  const [seedPending, setSeedPending] = useState(false);
 
   useEffect(() => {
     api.explorerFields(meta.league).then((f) => setTeams(f.teams ?? [])).catch(() => setTeams([]));
   }, [meta.league]);
+
+  // Runs on the render *after* the seed setters land, so `run` reads the
+  // seeded values rather than the previous ones.
+  useEffect(() => {
+    if (!seedPending) return;
+    setSeedPending(false);
+    run(1);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [seedPending, from, to, filters, sort, dir]);
 
   const run = (toPage = 1) => {
     setErr(null);

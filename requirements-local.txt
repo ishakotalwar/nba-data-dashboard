@@ -12,3 +12,7 @@ requests
 duckdb
 uvicorn[standard]
 pyarrow
+
+# Optional: enables the LLM fallback parser behind /api/ask. Without it (or
+# without ANTHROPIC_API_KEY) Ask Full Court still works on its rule parser.
+anthropic

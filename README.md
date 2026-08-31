@@ -19,6 +19,8 @@ Everything is served from local Parquet, so no request touches the network.
 - **Historical similarity**: weighted cosine over every qualifying season, with explanations for *why* two seasons are alike
 - **Shot analysis** by zone, against the league average for the same season
 - **Stat explorer** for arbitrary filter stacks over the full history
+- **Ask Full Court** — natural-language questions, answered from the data rather than from a model
+- **Light and dark themes**, remembered per browser
 - **Local Parquet API** — fast, offline, and immune to upstream rate limits
 
 ## Features
@@ -31,6 +33,7 @@ Everything is served from local Parquet, so no request touches the network.
 | **Shot Analysis** | Hexbin and scatter shot charts, zone-by-zone accuracy vs. the league, and two player-seasons compared |
 | **Teams** | League table, team profile over time, any two team-seasons head to head, and all-time leaderboards |
 | **Explorer** | Filter every player-season by any metric with `>`, `>=`, `<`, `<=`, `=` or `between`, then sort and page through the results |
+| **Ask Full Court** | A question in plain English — “which players since 2010 averaged 25+ points?” — parsed into a structured query, executed against local Parquet, with a button that opens the answer in the matching page |
 
 ## Architecture
 
@@ -102,6 +105,62 @@ The original Streamlit prototype is still there: `streamlit run app.py`.
 is the file the deployment installs and serverless bundles are size-capped.
 `requirements-local.txt` pulls it in and adds Streamlit, Plotly, SciPy,
 scikit-learn and the ETL's dependencies.
+
+## Ask Full Court
+
+A question box, reachable from every page (the floating button, or ⌘K), that
+resizes between three widths.
+
+The design rule is that **a model may choose what to compute, never what the
+answer is**:
+
+```text
+question -> parse to AskQuery -> validate -> existing analytics -> Parquet -> answer
+```
+
+`backend/ask_schema.py` defines the query language — five intents (`explorer`,
+`similarity`, `compare`, `shot_analysis`, `team_explorer`), a closed operator
+set, and the natural-language-to-column aliases. `backend/routers/ask.py`
+executes it by calling the same router functions the UI calls, so no analytics
+logic is duplicated. Every statistic on screen came out of a Parquet file.
+
+It understands four shapes of question: **conditions** ("25+ points and 40%
+from three"), **rankings** ("best WNBA defensive players", "top scorers since
+2015"), **one player-season** (similarity, comparison, shot zones), and **team
+leaderboards**.
+
+Names are resolved without a model: exact match, then substring, then spelling
+distance against every name and each part of it — so *Jokich*, *Yannis* and
+*Steph Curry* all land on the right player, and a genuinely ambiguous name
+returns a list to choose from instead of a guess. Role phrases resolve too —
+*rim protector* to blocks, *floor general* to assists.
+
+A ranking always names the metric it used and the games floor it applied, and
+says so when the dataset forces a proxy: "best defensive players" ranks on
+blocks, because there is no per-player defensive rating to rank on.
+
+Parsing runs in two stages (`backend/ask_parse.py`):
+
+1. **Rules** — regex over the shapes basketball questions take. Free, instant,
+   offline, deterministic, and enough for all eight worked examples.
+2. **Claude** — only for what the rules miss, with the schema enforced by
+   structured output. Requires `anthropic` installed and `ANTHROPIC_API_KEY`
+   set; without either, the feature runs on the rule parser alone. To enable it
+   on a deployment, add `anthropic` to `requirements.txt` and set the key.
+
+Questions the dataset cannot answer are declined rather than guessed — salary,
+awards, playoffs, injuries, draft, a metric that isn't stored, a season out of
+range, or shots before the 2021-22 coverage start. An ambiguous name returns a
+clarification instead of a guess.
+
+## Theme
+
+Light and dark, toggled from the header and stored in `localStorage`; the
+initial choice follows `prefers-color-scheme`. The palette lives in CSS
+variables in `frontend/src/index.css`, and `tailwind.config.js` resolves every
+colour through them, so a theme swap is one attribute on `<html>`. Plotly draws
+to canvas and cannot read CSS variables, so `Plot.tsx` samples the palette and
+redraws when the theme changes.
 
 ## Deployment
 

@@ -1,6 +1,8 @@
 import { useEffect, useRef } from "react";
 import Plotly from "plotly.js-dist-min";
 
+import { themeColor, useTheme } from "@/lib/theme";
+
 type Props = {
   data: any[];
   layout?: any;
@@ -29,16 +31,23 @@ export const traceColor = (i: number) => COLORWAY[i % COLORWAY.length];
  * module-level object would leak one chart's axis into the next — a categorical
  * bar chart inheriting a numeric season range puts every bar at NaN.
  */
-const makeBaseLayout = () => ({
-  paper_bgcolor: "rgba(0,0,0,0)",
-  plot_bgcolor: "rgba(0,0,0,0)",
-  font: { family: "Inter, sans-serif", color: "#cbd3de", size: 12 },
-  colorway: COLORWAY,
-  margin: { l: 50, r: 20, t: 30, b: 40 },
-  legend: { orientation: "h", y: -0.15, font: { color: "#cbd3de" } },
-  xaxis: { gridcolor: "#1f2630", zerolinecolor: "#1f2630", tickcolor: "#2a3240" },
-  yaxis: { gridcolor: "#1f2630", zerolinecolor: "#1f2630", tickcolor: "#2a3240" },
-});
+const makeBaseLayout = () => {
+  // Plotly draws to canvas and cannot read CSS variables, so the palette is
+  // sampled at render time and the chart is redrawn when the theme changes.
+  const ink = themeColor("ink", "#cbd3de");
+  const grid = themeColor("grid", "#1f2630");
+  const axis = themeColor("axis", "#2a3240");
+  return {
+    paper_bgcolor: "rgba(0,0,0,0)",
+    plot_bgcolor: "rgba(0,0,0,0)",
+    font: { family: "Inter, sans-serif", color: ink, size: 12 },
+    colorway: COLORWAY,
+    margin: { l: 50, r: 20, t: 30, b: 40 },
+    legend: { orientation: "h", y: -0.15, font: { color: ink } },
+    xaxis: { gridcolor: grid, zerolinecolor: grid, tickcolor: axis },
+    yaxis: { gridcolor: grid, zerolinecolor: grid, tickcolor: axis },
+  };
+};
 
 const baseConfig = {
   displaylogo: false,
@@ -63,6 +72,7 @@ function deepMerge<T>(a: any, b: any): T {
 
 export function Plot({ data, layout, config, className, height = 420, placeholder }: Props) {
   const ref = useRef<HTMLDivElement>(null);
+  const theme = useTheme();
   useEffect(() => {
     if (!ref.current) return;
     const empty = !data || data.length === 0;
@@ -75,7 +85,7 @@ export function Plot({ data, layout, config, className, height = 420, placeholde
           xref: "paper", yref: "paper", x: 0.5, y: 0.5,
           xanchor: "center", yanchor: "middle",
           text: placeholder, showarrow: false,
-          font: { color: "#6b7685", size: 13 },
+          font: { color: themeColor("mute", "#6b7685"), size: 13 },
         },
       ];
       // Nothing to zoom or download yet.
@@ -89,7 +99,7 @@ export function Plot({ data, layout, config, className, height = 420, placeholde
       // its first measurement and the chart is drawn short inside a taller box.
       Plotly.Plots.resize(el);
     });
-  }, [data, layout, config, placeholder]);
+  }, [data, layout, config, placeholder, theme]);
 
   // Same problem from the other direction: the card can be resized by layout
   // changes that never touch this component's props.

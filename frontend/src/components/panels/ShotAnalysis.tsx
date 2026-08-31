@@ -85,7 +85,8 @@ function CourtPlot({
   );
 }
 
-export function ShotAnalysis({ meta }: { meta: Meta }) {
+/** `seed` is the player-season Ask Full Court just analysed. */
+export function ShotAnalysis({ meta, seed }: { meta: Meta; seed?: any }) {
   const avatar = playerAvatar(meta);
   const [a, setA] = useState<PlayerSeason>(emptySelection);
   const [b, setB] = useState<PlayerSeason>(emptySelection);
@@ -96,6 +97,15 @@ export function ShotAnalysis({ meta }: { meta: Meta }) {
   const [zonesA, setZonesA] = useState<any>(null);
   const [zonesB, setZonesB] = useState<any>(null);
   const [err, setErr] = useState<string | null>(null);
+
+  useEffect(() => {
+    if (!seed?.player_id || !seed?.season) return;
+    setA({
+      playerId: seed.player_id,
+      playerName: seed.player_name ?? "",
+      season: String(seed.season),
+    });
+  }, [seed]);
 
   const load = (
     sel: PlayerSeason,

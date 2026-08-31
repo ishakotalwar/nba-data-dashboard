@@ -9,6 +9,8 @@ import { TeamsSection } from "./components/panels/TeamsSection";
 import { Explorer } from "./components/panels/Explorer";
 import { ShotAnalysis } from "./components/panels/ShotAnalysis";
 import { formatSeason } from "@/lib/season";
+import { AskFullCourt } from "@/components/AskFullCourt";
+import { useTheme, toggleTheme } from "@/lib/theme";
 
 /** One flat nav. `group` only draws a separator — it is not a second click. */
 const TABS = [
@@ -21,6 +23,10 @@ const TABS = [
 ] as const;
 
 export default function App() {
+  const [tab, setTab] = useState<string>("players");
+  // The structured query Ask Full Court last ran, handed to whichever panel it
+  // points at so "Open in …" lands on the answer instead of an empty form.
+  const [seed, setSeed] = useState<{ page: string; state: any } | null>(null);
   const [leagues, setLeagues] = useState<LeagueInfo[] | null>(null);
   const [league, setLeague] = useState<LeagueKey | null>(null);
   const [meta, setMeta] = useState<Meta | null>(null);
@@ -46,6 +52,8 @@ export default function App() {
     api.meta(league).then(setMeta).catch((e) => setErr(e.message));
   }, [league]);
 
+  const seedFor = (page: string) => (seed?.page === page ? seed.state : undefined);
+
   if (err) return <Bootstrap state="error" msg={err} leagues={leagues} league={league} onLeague={setLeague} />;
   if (!meta || !league) return <Bootstrap state="loading" />;
 
@@ -68,12 +76,15 @@ export default function App() {
               </div>
             </div>
           </div>
-          <LeagueToggle leagues={leagues} active={league} onChange={setLeague} />
+          <div className="flex items-center gap-3">
+            <ThemeToggle />
+            <LeagueToggle leagues={leagues} active={league} onChange={setLeague} />
+          </div>
         </div>
       </header>
 
       <main className="mx-auto max-w-7xl px-6 py-6">
-        <Tabs.Root defaultValue="players" key={league}>
+        <Tabs.Root value={tab} onValueChange={setTab} key={league}>
           <Tabs.List className="no-scrollbar mb-6 flex items-center gap-5 overflow-x-auto border-b border-border">
             {TABS.map((t, i) => (
               <Fragment key={t.v}>
@@ -95,14 +106,48 @@ export default function App() {
           </Tabs.List>
 
           <Tabs.Content value="players"><Players meta={meta} /></Tabs.Content>
-          <Tabs.Content value="compare"><Compare meta={meta} /></Tabs.Content>
-          <Tabs.Content value="similar"><Similar meta={meta} /></Tabs.Content>
-          <Tabs.Content value="shots"><ShotAnalysis meta={meta} /></Tabs.Content>
+          <Tabs.Content value="compare">
+            <Compare meta={meta} seed={seedFor("compare")} />
+          </Tabs.Content>
+          <Tabs.Content value="similar">
+            <Similar meta={meta} seed={seedFor("similarity")} />
+          </Tabs.Content>
+          <Tabs.Content value="shots">
+            <ShotAnalysis meta={meta} seed={seedFor("shots")} />
+          </Tabs.Content>
           <Tabs.Content value="teams"><TeamsSection meta={meta} /></Tabs.Content>
-          <Tabs.Content value="explorer"><Explorer meta={meta} /></Tabs.Content>
+          <Tabs.Content value="explorer">
+            <Explorer meta={meta} seed={seedFor("explorer")} />
+          </Tabs.Content>
         </Tabs.Root>
       </main>
+
+      <AskFullCourt
+        meta={meta}
+        onNavigate={(nextTab, navigate) => {
+          setTab(nextTab);
+          setSeed(navigate ?? null);
+        }}
+      />
     </div>
+  );
+}
+
+/** Light/dark switch. The palette itself lives in CSS variables, so this only
+ *  flips one attribute on <html>. */
+function ThemeToggle() {
+  const theme = useTheme();
+  const next = theme === "dark" ? "light" : "dark";
+  return (
+    <button
+      type="button"
+      onClick={toggleTheme}
+      className="btn btn-ghost px-2.5 py-1.5 text-sm"
+      title={`Switch to ${next} mode`}
+      aria-label={`Switch to ${next} mode`}
+    >
+      {theme === "dark" ? "☀" : "☾"}
+    </button>
   );
 }
 

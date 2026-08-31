@@ -12,7 +12,9 @@ import { formatSeason } from "@/lib/season";
 
 const PRESETS = ["Overall", "Scoring", "Shooting", "Playmaking", "Defense", "Custom"];
 
-export function Similar({ meta }: { meta: Meta }) {
+/** `seed` arrives from Ask Full Court: the structured query it just ran, so
+ *  "Open in Similarity" lands on the answer rather than an empty panel. */
+export function Similar({ meta, seed }: { meta: Meta; seed?: any }) {
   const avatar = playerAvatar(meta);
   const [sel, setSel] = useState<PlayerSeason>(emptySelection);
   const [preset, setPreset] = useState("Overall");
@@ -22,6 +24,20 @@ export function Similar({ meta }: { meta: Meta }) {
   const [sameSeason, setSameSeason] = useState(false);
   const [data, setData] = useState<any>(null);
   const [err, setErr] = useState<string | null>(null);
+
+  useEffect(() => {
+    if (!seed) return;
+    if (seed.player_id && seed.season) {
+      setSel({
+        playerId: seed.player_id,
+        playerName: seed.player_name ?? "",
+        season: String(seed.season),
+      });
+    }
+    if (seed.preset) setPreset(seed.preset);
+    if (typeof seed.k === "number") setK(seed.k);
+    if (typeof seed.min_gp === "number") setMinGp(seed.min_gp);
+  }, [seed]);
 
   const features: string[] = data?.features ?? [];
 
