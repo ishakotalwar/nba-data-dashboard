@@ -255,10 +255,7 @@ function Bootstrap({
     <div className="grid min-h-screen place-items-center bg-bg text-ink">
       <div className="card max-w-md p-6 text-center">
         {state === "loading" ? (
-          <>
-            <div className="mb-2 text-lg font-semibold">Loading dashboard…</div>
-            <div className="text-sm text-mute">Reading local parquet data</div>
-          </>
+          <div className="text-lg font-semibold">Loading…</div>
         ) : (
           <>
             <div className="mb-2 text-lg font-semibold text-bad">Couldn't load data</div>
