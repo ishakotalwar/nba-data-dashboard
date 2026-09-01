@@ -65,6 +65,7 @@ export const courtAxis = {
     showgrid: false,
     zeroline: false,
     showticklabels: false,
+    ticks: "",          // the court is the frame; axis marks only clutter it
     fixedrange: true,
     showline: false,
   },
@@ -75,6 +76,7 @@ export const courtAxis = {
     showgrid: false,
     zeroline: false,
     showticklabels: false,
+    ticks: "",
     fixedrange: true,
     showline: false,
   },
@@ -215,7 +217,12 @@ export function zoneBounds(zone: Zone, c: CourtGeometry) {
  * The same court as `buildCourtShapes`, but as plain polylines — a 3D scene
  * has no shape layer, so the floor has to be drawn as line traces.
  */
-export function courtLines(c: CourtGeometry): { x: number[]; y: number[] }[] {
+export function courtLines(
+  c: CourtGeometry,
+  /** The rim arc and free-throw circle sit under the tallest part of a 3D
+   *  terrain, where they read as rings drawn on the mountain. */
+  { inner = true }: { inner?: boolean } = {},
+): { x: number[]; y: number[] }[] {
   const junctionY = Math.sqrt(Math.max(c.arc * c.arc - c.corner * c.corner, 0));
   const theta = Math.atan2(junctionY, c.corner);
   const line = (pts: [number, number][]) => ({ x: pts.map((p) => p[0]), y: pts.map((p) => p[1]) });
@@ -226,8 +233,12 @@ export function courtLines(c: CourtGeometry): { x: number[]; y: number[] }[] {
   return [
     line(box(-250, -52.5, 250, 417.5)),          // floor
     line(box(-c.paint_width, -52.5, c.paint_width, c.paint_depth)),  // lane
-    fromArc(arcPoints(c.rim, 0, Math.PI, 40).map(([x, y]) => [x, y])),  // restricted arc
-    fromArc(arcPoints(60, 0, Math.PI, 40).map(([x, y]) => [x, y + c.paint_depth])), // FT circle
+    ...(inner
+      ? [
+          fromArc(arcPoints(c.rim, 0, Math.PI, 40).map(([x, y]) => [x, y])),  // restricted arc
+          fromArc(arcPoints(60, 0, Math.PI, 40).map(([x, y]) => [x, y + c.paint_depth])), // FT circle
+        ]
+      : []),
     fromArc(arcPoints(c.arc, theta, Math.PI - theta, 80).map(([x, y]) => [x, y])),  // arc
     line([[-c.corner, -52.5], [-c.corner, junctionY]]),
     line([[c.corner, -52.5], [c.corner, junctionY]]),

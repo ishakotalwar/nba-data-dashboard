@@ -180,10 +180,13 @@ function CourtPlot({
         },
         opacity: dimmed ? 0.3 : 1,
         // A filled region hovers through `text`, not `hovertemplate` — with
-        // hoveron "fills" there is no point under the cursor to template.
+        // hoveron "fills" there is no point under the cursor to template. The
+        // label steps aside once a card is open, since the card says more and
+        // the two would sit on top of each other. "none" and not "skip": skip
+        // would take the click events with it.
         hoveron: "fills",
         text: `<b>${poly.zone}</b><br>${numbers}`,
-        hoverinfo: "text",
+        hoverinfo: selected ? "none" : "text",
         hoverlabel: { bgcolor: "#12161c", bordercolor: "#2a3240",
                       font: { color: "#e6eaf0" }, align: "left" },
       };
@@ -197,7 +200,7 @@ function CourtPlot({
   // of where they actually shoot.
   const surfaceTraces = useMemo(() => {
     if (mode !== "3d") return [];
-    const floor = courtLines(court).map((l) => ({
+    const floor = courtLines(court, { inner: false }).map((l) => ({
       type: "scatter3d", mode: "lines",
       x: l.x, y: l.y, z: l.x.map(() => 0),
       line: { color: "rgba(180,190,205,0.35)", width: 2 },
@@ -259,32 +262,63 @@ function CourtPlot({
     const peak = Math.max(...mass.flat(), 1);
     const FLOOR_SHARE = 0.008;   // below this it is noise, not a shooting spot
 
+    const height = mass.map((row) => row.map((v) => (v / peak < FLOOR_SHARE ? null : v / peak)));
+    const terrain = {
+      type: "surface",
+      x: xs,
+      y: ys,
+      surfacecolor: colour,
+      cmid: 0,
+      cmin: -0.12,
+      cmax: 0.12,
+      showscale: false,
+      opacity: 1,
+      lighting: { ambient: 0.9, diffuse: 0.35, specular: 0.04, roughness: 1 },
+      contours: { z: { show: false, highlight: false } },
+      // No label on the terrain — but "none" and not "skip", because the hover
+      // events it keeps firing are what stand in for the clicks a 3D scene
+      // never sends.
+      hoverinfo: "none",
+    };
+    // Cold to hot against the league, the way a heat map reads.
+    const HEAT = [[0, "#22d3ee"], [0.42, "#7dd3c8"], [0.5, "#facc15"],
+                  [0.75, "#f59e6d"], [1, "#f0559b"]];
+    // The same scale washed out: the rest of the floor stays readable as heat,
+    // just pale enough that the chosen zone is what your eye lands on.
+    const FADED = [[0, "#bfeef7"], [0.42, "#d3efea"], [0.5, "#fdf0b4"],
+                   [0.75, "#fbdfd0"], [1, "#fbc7dd"]];
+
+    if (!selected) {
+      return [...floor, hoop, { ...terrain, z: height, colorscale: HEAT }];
+    }
+
+    // Sliced, the way the flat court slices: the chosen zone keeps its full
+    // colour, the rest of the terrain fades back, and the zone is outlined on
+    // the floor underneath it.
+    const zoneAt = ys.map((y) => xs.map((x) => zoneOf(x, y, court)));
+    const only = (want: boolean) =>
+      height.map((row, j) =>
+        row.map((v, i) => (v == null || (zoneAt[j][i] === selected) !== want ? null : v)),
+      );
+    const outline = zonePolygons(court).find((z) => z.zone === selected);
+
     return [
       ...floor,
       hoop,
-      {
-        type: "surface",
-        x: xs,
-        y: ys,
-        z: mass.map((row) => row.map((v) => (v / peak < FLOOR_SHARE ? null : v / peak))),
-        surfacecolor: colour,
-        // Cold to hot against the league, the way a heat map reads.
-        colorscale: [[0, "#22d3ee"], [0.42, "#7dd3c8"], [0.5, "#facc15"],
-                     [0.75, "#f59e6d"], [1, "#f0559b"]],
-        cmid: 0,
-        cmin: -0.12,
-        cmax: 0.12,
-        showscale: false,
-        opacity: 0.98,
-        lighting: { ambient: 0.72, diffuse: 0.6, specular: 0.05, roughness: 0.95 },
-        contours: {
-          z: { show: true, color: "rgba(12,15,20,0.35)", width: 1, highlight: false },
-        },
-        customdata: colour,
-        hovertemplate: "%{customdata:+.1%} vs. the league here<extra></extra>",
-      },
+      { ...terrain, z: only(false), colorscale: FADED },
+      { ...terrain, z: only(true), colorscale: HEAT },
+      ...(outline
+        ? [{
+            type: "scatter3d", mode: "lines",
+            x: [...outline.x, outline.x[0]],
+            y: [...outline.y, outline.y[0]],
+            z: outline.x.map(() => 0.004).concat(0.004),
+            line: { color: "#ff6a3d", width: 5 },
+            hoverinfo: "skip", showlegend: false,
+          }]
+        : []),
     ];
-  }, [data, zones, mode, court]);
+  }, [data, zones, mode, court, selected]);
 
   const traces = useMemo(() => {
     if (!data || mode === "3d") return [];
@@ -466,8 +500,12 @@ function ZoneCard({
           <div className="text-base font-semibold text-ink">{zone}</div>
           <div className="text-xs text-mute">{label}</div>
         </div>
-        <button onClick={onClose} className="text-xs text-mute transition hover:text-ink">
-          Close
+        <button
+          onClick={onClose}
+          aria-label="Close"
+          className="-mr-1 -mt-1 px-1.5 text-lg leading-none text-mute transition hover:text-ink"
+        >
+          ×
         </button>
       </div>
 
