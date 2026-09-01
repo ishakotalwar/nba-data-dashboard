@@ -14,6 +14,18 @@ type Props = {
    * the shape of the answer is visible before anything is selected.
    */
   placeholder?: string;
+  /** Fired for a clicked point: its trace name, its data coordinates and where
+   *  on screen the click landed, for charts you can drill into. */
+  onPointClick?: (point: {
+    name?: string;
+    x?: number;
+    y?: number;
+    clientX: number;
+    clientY: number;
+  }) => void;
+  /** Fired with the hovered point's data coordinates. A 3D scene never emits
+   *  clicks, so a caller that needs them tracks the hover instead. */
+  onPointHover?: (point: { x?: number; y?: number }) => void;
 };
 
 /** Trace colors, assigned by trace index. Exported so a custom legend can
@@ -70,7 +82,8 @@ function deepMerge<T>(a: any, b: any): T {
   return out;
 }
 
-export function Plot({ data, layout, config, className, height = 420, placeholder }: Props) {
+export function Plot({ data, layout, config, className, height = 420, placeholder,
+                      onPointClick, onPointHover }: Props) {
   const ref = useRef<HTMLDivElement>(null);
   const theme = useTheme();
   useEffect(() => {
@@ -94,12 +107,36 @@ export function Plot({ data, layout, config, className, height = 420, placeholde
     }
     const el = ref.current;
     Plotly.react(el, data, mergedLayout, mergedConfig).then(() => {
+      // Plotly keeps its own listener list, so clear ours before re-adding it
+      // or a click fires once per render that has happened.
+      const withEvents = el as any;
+      withEvents.removeAllListeners?.("plotly_click");
+      withEvents.removeAllListeners?.("plotly_hover");
+      if (onPointHover) {
+        withEvents.on("plotly_hover", (e: any) => {
+          const hit = e?.points?.[0];
+          if (hit) onPointHover({ x: hit.x, y: hit.y });
+        });
+      }
+      if (onPointClick) {
+        withEvents.on("plotly_click", (e: any) => {
+          const hit = e?.points?.[0];
+          if (!hit) return;
+          onPointClick({
+            name: hit.data?.name,
+            x: typeof hit.x === "number" ? hit.x : undefined,
+            y: typeof hit.y === "number" ? hit.y : undefined,
+            clientX: e?.event?.clientX ?? 0,
+            clientY: e?.event?.clientY ?? 0,
+          });
+        });
+      }
       // `responsive` only reacts to window resizes. When the container itself
       // changes size — a height prop that grows once data arrives — Plotly keeps
       // its first measurement and the chart is drawn short inside a taller box.
       Plotly.Plots.resize(el);
     });
-  }, [data, layout, config, placeholder, theme]);
+  }, [data, layout, config, placeholder, theme, onPointClick, onPointHover]);
 
   // Same problem from the other direction: the card can be resized by layout
   // changes that never touch this component's props.

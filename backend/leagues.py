@@ -21,6 +21,7 @@ class League:
     three_point_arc: float   # radius, tenths of a foot from the hoop
     three_point_corner: float  # corner-3 line |x|, same units
     team_minutes: int   # five players times the length of a game
+    season_games: int   # games in a full regular season, for scaling thresholds
 
     def season(self, start_year: int) -> str:
         """Canonical season string for a starting calendar year."""
@@ -64,12 +65,14 @@ NBA = League(
     key="nba", league_id="00", label="NBA", season_format="range", suffix="_nba",
     season_start_month=10, three_point_arc=237.5, three_point_corner=220.0,
     team_minutes=240,  # 48-minute game
+    season_games=82,
 )
 # WNBA arc is 22' 1.75"; corner line 21' 7.75" (FIBA-derived, adopted 2013).
 WNBA = League(
     key="wnba", league_id="10", label="WNBA", season_format="year", suffix="_wnba",
     season_start_month=5, three_point_arc=221.5, three_point_corner=216.5,
     team_minutes=200,  # 40-minute game
+    season_games=44,
 )
 
 # A franchise whose abbreviation changed in the source data — through

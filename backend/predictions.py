@@ -42,9 +42,21 @@ AGE_SLOPE_YOUNG = 0.003      # improvement per year below the peak
 AGE_SLOPE_OLD = 0.003        # decline per year above it
 PROJECTED_METRICS = ("pts", "reb", "ast", "stl", "blk", "tov", "ts_pct")
 MIN_SEASONS_FOR_PROJECTION = 1
-PROJECTION_MIN_GP = 20       # a season must be this long to inform a projection
+# How much of a season a player must have played for it to inform a projection,
+# as a share of the schedule. A flat 20 games is a quarter of an NBA season but
+# half a WNBA one, which cut WNBA rotations to six players and left 30 of the
+# 200 team minutes with nobody to give them to.
+PROJECTION_MIN_GP_SHARE = 20 / 82
 LIVE_MIN_GAMES = 3           # inside a season in progress, just a noise screen
-MAX_MINUTES = 38.0           # nobody plays the whole game
+
+
+def _min_games(league: League) -> int:
+    """The games floor for `league`, scaled to the length of its season."""
+    return max(LIVE_MIN_GAMES, round(league.season_games * PROJECTION_MIN_GP_SHARE))
+# Nobody plays the whole game. As a share of one game, not a fixed number of
+# minutes: 38 of an NBA 48 is a heavy starter's night, but 38 of a WNBA 40 is
+# almost the entire game, and it inflated every WNBA line.
+MAX_MINUTES_SHARE = 38.0 / 48.0
 MINUTE_CONCENTRATION = 2.0   # fitted by eye against real rotations; see _fit_to_team_minutes
 # Statuses that mean the player will not feature, so they get no line at all.
 UNAVAILABLE = __import__("re").compile(r"out|suspend|inactive", __import__("re").I)
@@ -278,9 +290,13 @@ def _player_history(league: League = DEFAULT) -> pd.DataFrame:
 
 
 @lru_cache(maxsize=4)
-def _league_means(league: League = DEFAULT) -> dict[str, float]:
+def _league_means(league: League = DEFAULT, before: int | None = None) -> dict[str, float]:
+    """League-average per-game line. `before` excludes the season being
+    projected, so a backtest never regresses toward a mean that saw it."""
     df = _player_history(league)
-    qualified = df[df.gp_num >= PROJECTION_MIN_GP]
+    if before is not None:
+        df = df[df.season_int < before]
+    qualified = df[df.gp_num >= _min_games(league)]
     return {m: float(pd.to_numeric(qualified[m], errors="coerce").mean())
             for m in PROJECTED_METRICS if m in df.columns}
 
@@ -329,7 +345,7 @@ def project_player(league: League, player_id: int, target_season: str | None = N
         weights.append(base * max(float(row.gp_num), 1.0))
         used.append(row)
 
-    means = _league_means(league)
+    means = _league_means(league, target)
     age = None
     bio_age = _projected_age(league, player_id, target)
     if bio_age is not None:
@@ -414,7 +430,7 @@ def player_backtest(league: League = DEFAULT, metric: str = "pts",
 
     proj_err, naive_err, n = [], [], 0
     for target in targets:
-        actual = hist[(hist.season_int == target) & (hist.gp_num >= PROJECTION_MIN_GP)]
+        actual = hist[(hist.season_int == target) & (hist.gp_num >= _min_games(league))]
         for row in actual.itertuples():
             pid = int(row.player_id)
             try:
@@ -454,7 +470,7 @@ def project_all(league: League = DEFAULT) -> list[dict]:
     if hist.empty:
         return []
     latest = int(hist.season_int.max())
-    active = hist[(hist.season_int == latest) & (hist.gp_num >= PROJECTION_MIN_GP)]
+    active = hist[(hist.season_int == latest) & (hist.gp_num >= _min_games(league))]
 
     out = []
     for pid in active["player_id"].dropna().unique():
@@ -534,12 +550,24 @@ TEAM_TOTAL_SHRINK = 0.35
 
 
 @lru_cache(maxsize=8)
-def _league_team_totals(league: League) -> dict[str, float]:
-    """What one team actually puts up in a game, averaged over the league."""
+def _league_team_totals(league: League, before: int | None = None) -> dict[str, float]:
+    """What one team actually puts up in a game, averaged over the league.
+
+    Measured on the most recent season completed before `before`, never over
+    all of history: scoring moves. Averaging 2003-2025 gives 103.5 points a
+    team, against 113.8 in 2025 alone, and normalising toward the old number
+    deflates every line by a tenth.
+    """
     log = data.gamelog(league)
     if log is None or log.empty:
         return {}
     frame = log.copy()
+    seasons = pd.to_numeric(frame["season"], errors="coerce")
+    if before is not None:
+        frame, seasons = frame[seasons < before], seasons[seasons < before]
+        if frame.empty:
+            return {}
+    frame = frame[seasons == seasons.max()]
     frame["team"] = frame["MATCHUP"].astype(str).str.split().str[0]
     cols = {"pts": "PTS", "reb": "REB", "ast": "AST",
             "stl": "STL", "blk": "BLK", "tov": "TOV"}
@@ -591,7 +619,8 @@ def roster_source(league: League, season: int) -> str:
 
 
 @lru_cache(maxsize=8)
-def _rotations(league: League, target_season: int) -> dict[str, list[dict]]:
+def _rotations(league: League, target_season: int,
+               live: bool | None = None) -> dict[str, list[dict]]:
     """Each team's rotation for `target_season`, every player projected.
 
     The roster is whoever finished the previous season on the team, ordered by
@@ -601,7 +630,8 @@ def _rotations(league: League, target_season: int) -> dict[str, list[dict]]:
     hist = _player_history(league)
     # A season with games already played is the best description of who is
     # playing and how well; only fall back to earlier seasons before tip-off.
-    live = bool((hist.season_int == target_season).any())
+    if live is None:
+        live = bool((hist.season_int == target_season).any())
     pool = hist[hist.season_int <= target_season] if live else hist[hist.season_int < target_season]
     if pool.empty:
         return {}
@@ -611,7 +641,7 @@ def _rotations(league: League, target_season: int) -> dict[str, list[dict]]:
     # within a live season the games floor only screens out one-off cameos,
     # and the minutes sort plus the top-N cut decide who actually shows.
     # Filtering on games here dropped players like an MVP missing time injured.
-    floor = LIVE_MIN_GAMES if live else PROJECTION_MIN_GP
+    floor = LIVE_MIN_GAMES if live else _min_games(league)
     active = pool[(pool.season_int == latest) & (pool.gp_num >= floor)]
 
     # Where the player actually is *now*. Falls back to last season's team when
@@ -653,11 +683,12 @@ def _rotations(league: League, target_season: int) -> dict[str, list[dict]]:
         })
     for team in out:
         out[team].sort(key=lambda r: r["minutes"], reverse=True)
-        _fit_to_team_minutes(league, out[team])
+        _fit_to_team_minutes(league, out[team], before=int(target_season))
     return out
 
 
-def _fit_to_team_minutes(league: League, players: list[dict]) -> None:
+def _fit_to_team_minutes(league: League, players: list[dict],
+                         before: int | None = None) -> None:
     """Rescale a rotation so it fits in one game, in place.
 
     Per-game averages come from each player's own past, where they had their
@@ -676,6 +707,7 @@ def _fit_to_team_minutes(league: League, players: list[dict]) -> None:
         return
 
     budget = float(league.team_minutes)
+    cap = budget / 5 * MAX_MINUTES_SHARE
     # Weighting by minutes squared rather than minutes: a coach concentrates a
     # rotation on his best players, so a starter keeps most of his workload
     # while the deep bench absorbs the squeeze. A flat split left a stacked
@@ -689,9 +721,9 @@ def _fit_to_team_minutes(league: League, players: list[dict]) -> None:
         spill = 0.0
         free = []
         for i, m in enumerate(allotted):
-            if m > MAX_MINUTES:
-                spill += m - MAX_MINUTES
-                allotted[i] = MAX_MINUTES
+            if m > cap:
+                spill += m - cap
+                allotted[i] = cap
             else:
                 free.append(i)
         if spill <= 0.01 or not free:
@@ -703,22 +735,25 @@ def _fit_to_team_minutes(league: League, players: list[dict]) -> None:
     # The last redistribution can push someone back over, so clamp once more.
     # A short-handed side then simply does not fill the budget, which is the
     # honest outcome: there is nobody left to give the minutes to.
-    allotted = [min(m, MAX_MINUTES) for m in allotted]
+    allotted = [min(m, cap) for m in allotted]
 
     for row, was, now in zip(players, baseline, allotted):
         factor = (now / was) if was > 0 else 0.0
         row["baseline_minutes"] = round(was, 1)
+        # The per-game average this started from, kept for game_line_backtest.
+        row["season_projected"] = dict(row["projected"])
         row["minutes"] = round(now, 1)
         row["projected"] = {k: (None if v is None else v * factor)
                             for k, v in row["projected"].items()}
 
-    _shrink_team_totals(league, players)
+    _shrink_team_totals(league, players, before=before)
     for row in players:
         row["projected"] = {k: (None if v is None else round(v, 2))
                             for k, v in row["projected"].items()}
 
 
-def _shrink_team_totals(league: League, players: list[dict]) -> None:
+def _shrink_team_totals(league: League, players: list[dict],
+                        before: int | None = None) -> None:
     """Pull each team total toward what a team really produces, in place.
 
     Minutes alone do not fix a squad assembled from other people's usage: five
@@ -727,7 +762,7 @@ def _shrink_team_totals(league: League, players: list[dict]) -> None:
     the league average, keeping better rosters ahead of worse ones instead of
     flattening every team onto the same line.
     """
-    norms = _league_team_totals(league)
+    norms = _league_team_totals(league, before)
     for metric, average in norms.items():
         if metric not in TEAM_TOTAL_METRICS or average <= 0:
             continue
@@ -747,10 +782,20 @@ def _scaled(value: float | None, factor: float) -> float | None:
 
 
 def game_player_lines(league: League, home: str, away: str, season: int,
-                      top: int = ROTATION_SIZE) -> dict:
-    """Projected per-game lines for both rotations in one scheduled game."""
-    rotations = _rotations(league, int(season))
-    defence = _defence_factors(league, int(season))
+                      top: int = ROTATION_SIZE, live: bool | None = None) -> dict:
+    """Projected per-game lines for both rotations in one scheduled game.
+
+    `live` is only for the backtest, which forces the pre-season view of a
+    season it is about to score.
+    """
+    return _sides(league, _rotations(league, int(season), live),
+                  _defence_factors(league, int(season)), home, away, top)
+
+
+def _sides(league: League, rotations: dict[str, list[dict]],
+           defence: dict[str, float], home: str, away: str, top: int) -> dict:
+    """Apply the per-game adjustments to both rotations. The one path the app
+    and the backtest share, so what is scored is what is shown."""
     out: dict[str, list[dict]] = {}
     context: dict[str, dict] = {}
     for side, team, opponent in (("home", home, away), ("away", away, home)):
@@ -804,59 +849,82 @@ def game_actual_lines(league: League, date: str, home: str, away: str) -> dict:
 
 
 @lru_cache(maxsize=4)
-def game_line_backtest(league: League = DEFAULT, metric: str = "pts") -> dict:
-    """How far a projected line lands from the actual one, per player-game.
+def game_line_backtest(league: League = DEFAULT, metric: str = "pts",
+                       season: int | None = None) -> dict:
+    """Score the line the app actually shows, game by game.
 
-    Scored on the most recent completed season, against the baseline of using
-    the player's own average for that season — the number a projection has to
-    beat to be worth anything.
+    The rotation, the minutes fit and the opponent and venue adjustments all
+    run exactly as they do on screen, through `_sides`. Everything they are
+    built from predates the season being scored: `live=False` forces the
+    pre-season view of a season the data already contains, so no game is
+    predicted with knowledge of itself or of the year it belongs to.
+
+    Three rivals on exactly the same player-games: the same projection without
+    the game fit, repeating last season, and the hindsight floor.
     """
     log = data.gamelog(league)
     hist = _player_history(league)
     if log is None or hist.empty:
         return {}
-    season = int(hist.season_int.max())
-    actual = log[log["season"].astype(str) == str(season)]
-    column = {"pts": "PTS", "reb": "REB", "ast": "AST"}.get(metric, "PTS")
-    if actual.empty or column not in actual.columns:
+    column = {"pts": "PTS", "reb": "REB", "ast": "AST",
+              "stl": "STL", "blk": "BLK", "tov": "TOV"}.get(metric)
+    if column is None or column not in log.columns:
         return {}
 
-    projected = {}
-    for row in hist[hist.season_int == season].itertuples():
-        try:
-            p = project_player(league, int(row.player_id), str(season))
-        except (KeyError, ValueError):
-            continue
-        value = p["projected"].get(metric)
-        if value is not None:
-            projected[int(row.player_id)] = float(value)
-    if not projected:
+    season = int(season) if season else int(hist.season_int.max())
+    played = games(league)
+    played = played[played.season == season]
+    box = log[pd.to_numeric(log["season"], errors="coerce") == season].copy()
+    if played.empty or box.empty:
         return {}
 
-    # The naive rival: assume a player repeats last season's per-game average.
-    previous = hist[hist.season_int == season - 1]
-    last_season = {int(r.player_id): float(v)
-                   for r, v in zip(previous.itertuples(),
-                                   pd.to_numeric(previous.get(metric), errors="coerce"))
-                   if pd.notna(v)}
+    box["team"] = box["MATCHUP"].astype(str).str.split().str[0].map(league.canonical_team)
+    truth = {(d, t, int(p)): float(v)
+             for d, t, p, v in zip(box["GAME_DATE"], box["team"],
+                                   box["player_id"], box[column])
+             if pd.notna(v)}
+    hindsight = box.groupby(box["player_id"].astype(int))[column].mean().to_dict()
 
-    scored = actual[actual["player_id"].astype(int).isin(projected)].copy()
-    ids = scored["player_id"].astype(int)
-    scored["projected"] = ids.map(projected)
-    scored["naive"] = ids.map(last_season)
-    # Hindsight: what the player actually averaged over the season being
-    # scored. No forecast can see this, so it is a floor, not a rival.
-    scored["season_mean"] = scored.groupby("player_id")[column].transform("mean")
-    scored = scored.dropna(subset=[column, "projected"])
-    if scored.empty:
+    rotations = _rotations(league, season, live=False)
+    defence = _defence_factors(league, season)
+    # The same projection before it was fitted to a game, to show what the fit
+    # is worth on its own.
+    unfitted = {int(r["player_id"]): (r.get("season_projected") or {}).get(metric)
+                for rows in rotations.values() for r in rows}
+    prior = hist[hist.season_int == season - 1]
+    naive = {int(r.player_id): float(v)
+             for r, v in zip(prior.itertuples(),
+                             pd.to_numeric(prior.get(metric), errors="coerce"))
+             if pd.notna(v)}
+
+    errors: dict[str, list[float]] = {"line": [], "season": [], "naive": [], "hindsight": []}
+    for game in played.itertuples():
+        lines = _sides(league, rotations, defence, game.home, game.away, ROTATION_SIZE)
+        for side, team in (("home", game.home), ("away", game.away)):
+            key_team = league.canonical_team(team)
+            for row in lines["players"][side]:
+                pid = int(row["player_id"])
+                actual = truth.get((game.GAME_DATE, key_team, pid))
+                predicted = row.get(metric)
+                if actual is None or predicted is None:
+                    continue  # did not play, or nothing to project from
+                errors["line"].append(abs(predicted - actual))
+                for name, table in (("season", unfitted), ("naive", naive),
+                                    ("hindsight", hindsight)):
+                    value = table.get(pid)
+                    if value is not None:
+                        errors[name].append(abs(float(value) - actual))
+
+    if not errors["line"]:
         return {}
-    naive = scored.dropna(subset=["naive"])
+    mae = lambda k: (round(float(np.mean(errors[k])), 2) if errors[k] else None)
     return {
         "metric": metric,
         "season": str(season),
-        "player_games": int(len(scored)),
-        "mae": round(float((scored[column] - scored["projected"]).abs().mean()), 2),
-        "naive_mae": (round(float((naive[column] - naive["naive"]).abs().mean()), 2)
-                      if len(naive) else None),
-        "hindsight_mae": round(float((scored[column] - scored["season_mean"]).abs().mean()), 2),
+        "games": int(len(played)),
+        "player_games": len(errors["line"]),
+        "mae": mae("line"),
+        "season_line_mae": mae("season"),
+        "naive_mae": mae("naive"),
+        "hindsight_mae": mae("hindsight"),
     }

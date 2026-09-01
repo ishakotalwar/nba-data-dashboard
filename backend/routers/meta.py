@@ -4,6 +4,7 @@ from __future__ import annotations
 from fastapi import APIRouter
 
 from .. import data, leagues
+from . import shots
 
 router = APIRouter(prefix="/api", tags=["meta"])
 
@@ -38,5 +39,10 @@ def meta(league: str | None = None):
         "seasons": data.seasons(lg),
         "metrics": data.available_metrics(lg),
         "invert_metrics": sorted(data.INVERT_METRICS),
-        "court": {"arc": lg.three_point_arc, "corner": lg.three_point_corner},
+        # Everything the shot chart needs to redraw the same zones the
+        # backend classifies shots into.
+        "court": {"arc": lg.three_point_arc, "corner": lg.three_point_corner,
+                  "rim": shots.RESTRICTED_RADIUS, "paint_width": shots.PAINT_HALF_WIDTH,
+                  "paint_depth": shots.PAINT_DEPTH, "paint_near": shots.PAINT_NEAR_RADIUS,
+                  "wing_angle": shots.WING_ANGLE},
     }

@@ -21,10 +21,16 @@ router = APIRouter(prefix="/api", tags=["shots"])
 RESTRICTED_RADIUS = 40.0    # 4 ft from the rim
 PAINT_HALF_WIDTH = 80.0     # the lane is 16 ft wide
 PAINT_DEPTH = 137.5         # to the free-throw line
+PAINT_NEAR_RADIUS = 80.0    # 8 ft: past this the lane is floater range
+
+# Above the break splits into wings and the top of the arc at these angles from
+# the rim, measured from the right baseline: a 60-degree band across the top,
+# with the wings filling the gap down to where the corner begins.
+WING_ANGLE = 60.0
 
 ZONE_ORDER = [
-    "Restricted Area", "Paint", "Midrange",
-    "Left Corner 3", "Right Corner 3", "Above the Break 3",
+    "Rim", "Paint", "Short Midrange", "Long Midrange",
+    "Left Corner 3", "Left Wing 3", "Top of Arc 3", "Right Wing 3", "Right Corner 3",
 ]
 
 
@@ -38,13 +44,23 @@ def classify(x: pd.Series, y: pd.Series, league) -> pd.Series:
     is_corner3 = (x.abs() >= corner) & (y <= junction_y)
     is_three = is_corner3 | (dist >= arc)
 
-    zone = pd.Series("Midrange", index=x.index, dtype=object)
+    zone = pd.Series("Long Midrange", index=x.index, dtype=object)
     zone[is_three & is_corner3 & (x < 0)] = "Left Corner 3"
     zone[is_three & is_corner3 & (x >= 0)] = "Right Corner 3"
-    zone[is_three & ~is_corner3] = "Above the Break 3"
+
+    # Angle from the rim: 0 along the right baseline, 180 along the left.
+    angle = np.degrees(np.arctan2(y, x))
+    above = is_three & ~is_corner3
+    zone[above & (angle < 90 - WING_ANGLE / 2)] = "Right Wing 3"
+    zone[above & (angle > 90 + WING_ANGLE / 2)] = "Left Wing 3"
+    zone[above & (angle >= 90 - WING_ANGLE / 2) & (angle <= 90 + WING_ANGLE / 2)] = "Top of Arc 3"
+
+    # The lane splits at 8 ft: everything closer is a shot at the basket,
+    # everything beyond it out to the free-throw line is a longer look.
     in_paint = ~is_three & (x.abs() <= PAINT_HALF_WIDTH) & (y <= PAINT_DEPTH)
-    zone[in_paint] = "Paint"
-    zone[~is_three & (dist <= RESTRICTED_RADIUS)] = "Restricted Area"
+    zone[in_paint & (dist > PAINT_NEAR_RADIUS)] = "Short Midrange"
+    zone[in_paint & (dist <= PAINT_NEAR_RADIUS)] = "Paint"
+    zone[~is_three & (dist <= RESTRICTED_RADIUS)] = "Rim"
     return zone
 
 

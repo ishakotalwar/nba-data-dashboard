@@ -15,12 +15,14 @@ lines, Elo ratings, and a search for any player's next season.
 |---|---|---|
 | Game accuracy since 2015 | 65.5% | 65.8% |
 | Always picking home | 56.5% | 55.3% |
-| Points off by | 2.42 | 2.53 |
-| Repeating last season, off by | 2.53 | 2.71 |
+| Points off by | 2.42 | 2.50 |
+| Repeating last season, off by | 2.53 | 2.66 |
 
 Season averages don't add up to a real game, so lines get refit to one: 240 team
 minutes (200 in the WNBA) split by what each player earned, totals pulled toward
-what teams score, anyone ruled out left out.
+what teams score, anyone ruled out left out. That buys a team total that adds
+up and costs about 0.2 points of per-player accuracy, which the game backtest
+reports rather than hides.
 
 ## Running it
 
