@@ -2,12 +2,10 @@ import { Fragment, useEffect, useState } from "react";
 import * as Tabs from "@radix-ui/react-tabs";
 import { api, type LeagueInfo, type LeagueKey, type Meta } from "./lib/api";
 import { cn } from "./lib/cn";
-import { Players } from "./components/panels/Players";
-import { Compare } from "./components/panels/Compare";
-import { Similar } from "./components/panels/Similar";
+import { PlayersSection } from "./components/panels/PlayersSection";
+import { CompareSection } from "./components/panels/CompareSection";
 import { TeamsSection } from "./components/panels/TeamsSection";
 import { Explorer } from "./components/panels/Explorer";
-import { ShotAnalysis } from "./components/panels/ShotAnalysis";
 import { AskFullCourt } from "@/components/AskFullCourt";
 import { Landing } from "@/components/Landing";
 import { PredictCalendar } from "@/components/panels/PredictCalendar";
@@ -15,17 +13,26 @@ import { PredictTeams } from "@/components/panels/PredictTeams";
 import { PredictPlayers } from "@/components/panels/PredictPlayers";
 import { useTheme, toggleTheme } from "@/lib/theme";
 
-/** One flat nav. `group` only draws a separator — it is not a second click. */
+/** `group` only draws a separator — it is not a second click. */
 type Mode = "stats" | "predictions";
 
+/** Four subjects. Each one's pages switch inside it, not up here. */
 const TABS = [
-  { v: "players", label: "Players", group: "player" },
-  { v: "compare", label: "Compare", group: "player" },
-  { v: "similar", label: "Similarity", group: "player" },
-  { v: "shots", label: "Shot Analysis", group: "player" },
-  { v: "teams", label: "Teams", group: "team" },
-  { v: "explorer", label: "Explorer", group: "team" },
+  { v: "players", label: "Players", group: "stats" },
+  { v: "teams", label: "Teams", group: "stats" },
+  { v: "compare", label: "Compare", group: "stats" },
+  { v: "explorer", label: "Explorer", group: "explorer" },
 ] as const;
+
+/** Ask Full Court names pages after the feature it answered with. Each one
+ *  lands on a tab and, inside it, on the view showing that answer. */
+const PAGE_ROUTES: Record<string, { tab: string; view?: string }> = {
+  similarity: { tab: "players", view: "similar" },
+  shots: { tab: "players", view: "shots" },
+  compare: { tab: "compare", view: "players" },
+  teams: { tab: "teams", view: "leaders" },
+  explorer: { tab: "explorer" },
+};
 
 const PREDICT_TABS = [
   { v: "predict-calendar", label: "Games", group: "predict" },
@@ -71,6 +78,11 @@ export default function App() {
   }, [league]);
 
   const seedFor = (page: string) => (seed?.page === page ? seed.state : undefined);
+  /** The view a section should open on, when Ask pointed at one of its pages. */
+  const viewFor = (tabName: string) => {
+    const route = seed ? PAGE_ROUTES[seed.page] : undefined;
+    return route?.tab === tabName ? route.view : undefined;
+  };
 
   const switchMode = (next: Mode) => {
     setMode(next);
@@ -139,17 +151,15 @@ export default function App() {
             ))}
           </Tabs.List>
 
-          <Tabs.Content value="players"><Players meta={meta} /></Tabs.Content>
+          <Tabs.Content value="players">
+            <PlayersSection meta={meta} view={viewFor("players")} seedFor={seedFor} />
+          </Tabs.Content>
+          <Tabs.Content value="teams">
+            <TeamsSection meta={meta} view={viewFor("teams")} />
+          </Tabs.Content>
           <Tabs.Content value="compare">
-            <Compare meta={meta} seed={seedFor("compare")} />
+            <CompareSection meta={meta} view={viewFor("compare")} seedFor={seedFor} />
           </Tabs.Content>
-          <Tabs.Content value="similar">
-            <Similar meta={meta} seed={seedFor("similarity")} />
-          </Tabs.Content>
-          <Tabs.Content value="shots">
-            <ShotAnalysis meta={meta} seed={seedFor("shots")} />
-          </Tabs.Content>
-          <Tabs.Content value="teams"><TeamsSection meta={meta} /></Tabs.Content>
           <Tabs.Content value="explorer">
             <Explorer meta={meta} seed={seedFor("explorer")} />
           </Tabs.Content>
@@ -161,8 +171,8 @@ export default function App() {
 
       <AskFullCourt
         meta={meta}
-        onNavigate={(nextTab, navigate) => {
-          setTab(nextTab);
+        onNavigate={(page, navigate) => {
+          setTab(PAGE_ROUTES[page]?.tab ?? page);
           setSeed(navigate ?? null);
         }}
       />

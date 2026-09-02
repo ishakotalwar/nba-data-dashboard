@@ -132,6 +132,70 @@ def teams_compare(req: TeamCompareRequest):
     return analytics.json_safe(out)
 
 
+def _lineup_rows(df: pd.DataFrame) -> list[dict]:
+    """Lineup totals -> rates, on the same per-100-possessions scale as ORtg."""
+    out = df.copy()
+    poss = out["poss"].where(out["poss"] > 0)
+    out["ortg"] = (100 * out["pts_for"] / poss).round(1)
+    out["drtg"] = (100 * out["pts_against"] / poss).round(1)
+    out["net"] = (out["ortg"] - out["drtg"]).round(1)
+    out["plus_minus"] = out["pts_for"] - out["pts_against"]
+    # What fraction of everything this team played, so a big net rating over 80
+    # minutes isn't read as a description of the season.
+    out["share"] = (out["min"] / out["team_min"].where(out["team_min"] > 0)).round(4)
+    # Stored in player-id order, which is meaningless to read. Sort by surname
+    # so the same five looks the same everywhere it appears.
+    out["players"] = [
+        sorted(({"id": int(i), "name": n} for i, n in zip(ids.split("|"), names.split("|"))),
+               key=lambda p: p["name"].rsplit(" ", 1)[-1])
+        for ids, names in zip(out["player_ids"], out["player_names"])
+    ]
+    cols = ["team_name", "team_abbr", "season", "players", "games", "stints",
+            "min", "share", "poss", "pts_for", "pts_against",
+            "ortg", "drtg", "net", "plus_minus"]
+    return data.records(out[cols].rename(columns={"team_name": "team"}))
+
+
+@router.get("/lineups")
+def team_lineups(season: str, team: str | None = None, league: str | None = None,
+                 min_minutes: float = 50, limit: int = 250):
+    """Five-man lineups for one season, either league-wide or for one team.
+
+    Rebuilt from play-by-play substitutions by `etl/lineup_etl.py` — the box
+    scores say what a player did, only the substitutions say who he did it
+    alongside.
+    """
+    lg = leagues.get(league)
+    df = data.lineups(lg)
+    if df is None:
+        raise HTTPException(404, f"No {lg.label} lineup data. "
+                                 f"Run `python etl/lineup_etl.py --league {lg.key}`.")
+    sub = df[df["season"] == str(season)]
+    if sub.empty:
+        raise HTTPException(404, f"No {lg.label} lineups for {season}. "
+                                 f"Seasons on disk: {', '.join(data.lineup_seasons(lg)) or 'none'}")
+    team_total = None
+    if team:
+        sub = sub[sub["team_name"] == team]
+        if sub.empty:
+            raise HTTPException(404, f"{team} has no {season} lineups")
+        team_total = float(sub["team_min"].iloc[0])
+
+    qualified = sub[sub["min"] >= float(min_minutes)]
+    ordered = qualified.sort_values("min", ascending=False).head(limit)
+    rows = _lineup_rows(ordered)
+    return analytics.json_safe({
+        "season": str(season), "league": lg.key, "team": team,
+        "min_minutes": float(min_minutes),
+        "rows": rows,
+        # The floor hides lineups, and the ETL's own floor hides more. Both
+        # shares are reported rather than left for the reader to wonder about.
+        "shown_minutes": float(qualified["min"].sum()),
+        "team_minutes": team_total,
+        "lineups_total": int(len(sub)),
+    })
+
+
 @router.get("/rankings")
 def teams_rankings(metric: str = "net", league: str | None = None,
                    limit: int = 15, min_games: int = 20):

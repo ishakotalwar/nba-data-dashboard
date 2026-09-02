@@ -107,6 +107,27 @@ def gamelog(league: League = DEFAULT) -> pd.DataFrame | None:
 
 
 @lru_cache(maxsize=8)
+def lineups(league: League = DEFAULT) -> pd.DataFrame | None:
+    """Five-man lineup totals, or None if `etl/lineup_etl.py` hasn't run.
+
+    Rebuilt from play-by-play substitutions, so it only covers the seasons that
+    ETL was pointed at — a shorter range than the box-score data, since ESPN's
+    older substitution logs are too sparse to close lineups reliably.
+    """
+    df = _load_optional("lineup", league)
+    return _with_season_str(df) if df is not None else None
+
+
+@lru_cache(maxsize=8)
+def lineup_seasons(league: League = DEFAULT) -> list[str]:
+    """Seasons with lineup data, newest last. Empty when the ETL hasn't run."""
+    df = lineups(league)
+    if df is None or df.empty:
+        return []
+    return sorted(df["season"].unique().tolist())
+
+
+@lru_cache(maxsize=8)
 def schedule(league: League = DEFAULT) -> pd.DataFrame | None:
     """Scheduled games for this league, or None if the schedule ETL hasn't run.
 

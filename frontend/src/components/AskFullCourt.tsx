@@ -46,7 +46,8 @@ export function AskFullCourt({
   onNavigate,
 }: {
   meta: Meta;
-  onNavigate?: (tab: string, navigate?: { page: string; state: any }) => void;
+  /** Called with the API's page name; App.tsx routes it to a tab and view. */
+  onNavigate?: (page: string, navigate?: { page: string; state: any }) => void;
 }) {
   const [open, setOpen] = useState(false);
   const [size, setSize] = useState<Size>(() => {
@@ -209,7 +210,8 @@ function Answer({
 }: {
   result: AskResult;
   meta: Meta;
-  onNavigate?: (tab: string, navigate?: { page: string; state: any }) => void;
+  /** Called with the API's page name; App.tsx routes it to a tab and view. */
+  onNavigate?: (page: string, navigate?: { page: string; state: any }) => void;
 }) {
   // Format by the answer's league, not the one the UI happens to be showing.
   const fmt = (s: string) => formatSeason(s, result.season_format ?? meta.season_format);
@@ -251,7 +253,7 @@ function Answer({
           type="button"
           className="btn btn-ghost w-full text-xs"
           onClick={() =>
-            onNavigate(PAGE_TO_TAB[result.target_page!] ?? result.target_page!, result.navigate)
+            onNavigate(result.target_page!, result.navigate)
           }
         >
           Open in {PAGE_LABELS[result.target_page] ?? result.target_page}
@@ -267,16 +269,6 @@ const PAGE_LABELS: Record<string, string> = {
   compare: "Compare",
   shots: "Shot Analysis",
   teams: "Teams",
-};
-
-/** The API names pages after the feature; App.tsx names tabs after the panel
- *  component. "similarity" and "similar" are the same page. */
-const PAGE_TO_TAB: Record<string, string> = {
-  explorer: "explorer",
-  similarity: "similar",
-  compare: "compare",
-  shots: "shots",
-  teams: "teams",
 };
 
 function Cell({ children }: { children: React.ReactNode }) {

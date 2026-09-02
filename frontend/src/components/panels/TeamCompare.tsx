@@ -146,9 +146,7 @@ export function TeamCompare({ meta }: { meta: Meta }) {
   return (
     <div className="space-y-4">
       <Card>
-        <CardHeader
-          title="Compare teams"
-        />
+        <CardHeader title="League table" />
         <CardBody>
           <div className="grid gap-3 md:grid-cols-3">
             <div>
@@ -176,7 +174,7 @@ export function TeamCompare({ meta }: { meta: Meta }) {
 
       <Card>
         <CardHeader
-          title={season ? `League table — ${formatSeason(season, meta.season_format)}` : "League table"}
+          title={season ? `Every team — ${formatSeason(season, meta.season_format)}` : "Every team"}
         />
         <CardBody className="p-0">
           {sorted.length === 0 ? (

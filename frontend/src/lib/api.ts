@@ -54,6 +54,8 @@ export type Meta = {
   player_ids: Record<string, number>;
   teams: string[];
   seasons: string[];
+  /** Seasons with rebuilt five-man lineups — a shorter list than `seasons`. */
+  lineup_seasons: string[];
   metrics: string[];
   invert_metrics: string[];
   // Three-point geometry for this league, in tenths of a foot from the hoop.
@@ -187,6 +189,21 @@ export const api = {
   teamsRankings: (metric: string, league: LeagueKey, limit = 15) =>
     fetch(`${BASE}/teams/rankings?${q_(league, { metric, limit: String(limit) })}`)
       .then((r) => j<any>(r)),
+
+  /** Five-man lineups for a season, league-wide or for one team. */
+  teamLineups: (
+    season: string,
+    league: LeagueKey,
+    opts: { team?: string; minMinutes?: number; limit?: number } = {}
+  ) =>
+    fetch(
+      `${BASE}/teams/lineups?${q_(league, {
+        season,
+        ...(opts.team ? { team: opts.team } : {}),
+        min_minutes: String(opts.minMinutes ?? 50),
+        limit: String(opts.limit ?? 250),
+      })}`
+    ).then((r) => j<any>(r)),
 
   teamFactors: (team: string, season: string, league: LeagueKey) =>
     fetch(`${BASE}/teams/factors?${q_(league, { team, season })}`).then((r) => j<any>(r)),
