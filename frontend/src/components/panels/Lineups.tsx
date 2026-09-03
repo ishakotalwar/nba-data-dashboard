@@ -314,15 +314,6 @@ export function Lineups({ meta }: { meta: Meta }) {
           )}
         </CardBody>
       </Card>
-
-      <div className="px-1 text-xs text-mute">
-        Substitutions are the only record of who was on the floor, and ESPN's are
-        not perfect. Rebuilt minutes land within a minute of the box score for
-        99.5% of player-games in the latest NBA season but 92% in 2015, and the
-        seasons before each league's first one here are worse still — which is
-        where the list of seasons stops. Fives that played under five minutes
-        together aren't stored.
-      </div>
     </div>
   );
 }

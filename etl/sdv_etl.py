@@ -17,7 +17,7 @@ Outputs, per league, into data/ with the league's suffix:
 Usage:
     python etl/sdv_etl.py --league wnba
     python etl/sdv_etl.py --league nba --seasons 2015-2026
-    python etl/sdv_etl.py --league nba --shot-seasons 2024-2026
+    python etl/sdv_etl.py --league nba --shot-seasons 2024-2026   # smaller pull
 """
 from __future__ import annotations
 
@@ -60,7 +60,6 @@ MIN_TEAM_GAMES = 10
 HOOP_X = 41.75
 # Free throws carry a placeholder coordinate rather than a real location.
 FT_SENTINEL = (25.0, 13.75)
-DEFAULT_SHOT_SEASONS = 5
 
 
 def url_for(league: League, dataset: str, season: int) -> str:
@@ -324,14 +323,16 @@ def main(argv=None):
     ap.add_argument("--seasons", default=None,
                     help=f"season or inclusive range (default: {FIRST_SEASON}-present)")
     ap.add_argument("--shot-seasons", default=None,
-                    help=f"seasons to pull shot coordinates for "
-                         f"(default: the most recent {DEFAULT_SHOT_SEASONS})")
+                    help="seasons to pull shot coordinates for (default: all of "
+                         "--seasons; narrow this to trade shot history for a "
+                         "smaller download and a smaller file)")
     args = ap.parse_args(argv)
 
     league = LEAGUES[args.league]
     seasons = parse_seasons(args.seasons)
-    shot_seasons = (parse_seasons(args.shot_seasons) if args.shot_seasons
-                    else seasons[-DEFAULT_SHOT_SEASONS:])
+    # Shots default to the full range: a shorter one silently drops seasons the
+    # shot chart was showing, since each run rewrites the whole file.
+    shot_seasons = parse_seasons(args.shot_seasons) if args.shot_seasons else seasons
     repo = REPOS[league.key][0]
     print(f"[{league.label}] {repo}, seasons {seasons[0]}-{seasons[-1]}")
 

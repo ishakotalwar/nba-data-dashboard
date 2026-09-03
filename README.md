@@ -41,7 +41,7 @@ uvicorn backend.main:app --reload --port 8000   # one terminal
 cd frontend && npm run dev                      # another, opens :5173
 ```
 
-Data is ESPN's via hoopR and wehoop, about 17 MB of Parquet in `data/`, and it's
+Data is ESPN's via hoopR and wehoop, about 36 MB of Parquet in `data/`, and it's
 committed, so the deployed API calls nothing.
 
 ## Worth knowing
