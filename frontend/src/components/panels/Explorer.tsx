@@ -1,6 +1,7 @@
 import { useEffect, useState } from "react";
 import { api, type Meta } from "@/lib/api";
 import { Card, CardBody, CardHeader } from "@/components/ui/Card";
+import { RateToggle } from "@/components/ui/RateToggle";
 import { Select } from "@/components/ui/Select";
 import { playerAvatar } from "@/components/ui/Avatar";
 import { formatValue, label, shortLabel, sortMetrics } from "@/lib/metrics";
@@ -8,6 +9,11 @@ import { cn } from "@/lib/cn";
 import { formatSeason } from "@/lib/season";
 
 type Filt = { metric: string; op: string; value: number; value2?: number };
+
+// A rate divides by playing time, so a player with one minute on record posts
+// 150 points per 100 possessions. Switching off per-game applies a rotation
+// player's qualifier, unless the query already carries its own.
+const RATE_QUALIFIER = { games: "20", minutes: "15" };
 
 const OPS = [
   { value: ">=", label: "≥" },
@@ -37,6 +43,7 @@ export function Explorer({ meta, seed }: { meta: Meta; seed?: any }) {
   const [sort, setSort] = useState("pts");
   const [dir, setDir] = useState<"asc" | "desc">("desc");
   const [page, setPage] = useState(1);
+  const [per, setPer] = useState("game");
   const [teams, setTeams] = useState<string[]>([]);
   useEffect(() => {
     if (!seed) return;
@@ -89,6 +96,7 @@ export function Explorer({ meta, seed }: { meta: Meta; seed?: any }) {
         team: team || undefined,
         player: player || undefined,
         filters: filters.filter((f) => f.metric && !Number.isNaN(f.value)),
+        per,
         sort,
         dir,
         page: toPage,
@@ -101,11 +109,23 @@ export function Explorer({ meta, seed }: { meta: Meta; seed?: any }) {
       });
   };
 
-  // Re-run on sort changes once results exist.
+  // Re-run on sort or rate-basis changes once results exist. The basis moves
+  // every counting stat in the table, so leaving stale rows on screen under a
+  // new label would misreport them.
   useEffect(() => {
     if (data) run(1);
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [sort, dir]);
+  }, [sort, dir, per]);
+
+  // Only ever raises floors left at zero, so a qualifier the user typed —
+  // including a deliberate zero they set afterwards — is never overwritten.
+  const changeBasis = (next: string) => {
+    if (next !== "game") {
+      if (minGp === "0") setMinGp(RATE_QUALIFIER.games);
+      if (minMin === "0") setMinMin(RATE_QUALIFIER.minutes);
+    }
+    setPer(next);
+  };
 
   const setFilter = (i: number, patch: Partial<Filt>) =>
     setFilters((fs) => fs.map((f, idx) => (idx === i ? { ...f, ...patch } : f)));
@@ -117,6 +137,14 @@ export function Explorer({ meta, seed }: { meta: Meta; seed?: any }) {
       <Card>
         <CardHeader
           title="Stat explorer"
+          subtitle={
+            per === "game"
+              ? "Filters and sorting apply on the chosen basis, so ≥25 points means 25 per game."
+              : `Filters and sorting apply on the chosen basis. Rates need a sample to mean ` +
+                `anything, so this opens at ${RATE_QUALIFIER.games}+ games and ` +
+                `${RATE_QUALIFIER.minutes}+ minutes — lower them if you want the tail.`
+          }
+          right={<RateToggle meta={meta} value={per} onChange={changeBasis} />}
         />
         <CardBody className="space-y-4">
           <div className="grid gap-3 md:grid-cols-3 lg:grid-cols-6">

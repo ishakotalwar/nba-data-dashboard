@@ -40,7 +40,12 @@ def meta(league: str | None = None):
         # Lineups start later than the rest: they need play-by-play, and the
         # early substitution logs are too sparse to rebuild a five from.
         "lineup_seasons": data.lineup_seasons(lg),
+        "rating_seasons": data.rating_seasons(lg),
         "metrics": data.available_metrics(lg),
+        # How a counting stat can be expressed: per game, per 36, per 100 poss.
+        "rate_bases": data.RATE_BASES,
+        # Which games a shot chart can draw from.
+        "shot_season_types": shots.SEASON_TYPES,
         "invert_metrics": sorted(data.INVERT_METRICS),
         # Everything the shot chart needs to redraw the same zones the
         # backend classifies shots into.

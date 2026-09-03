@@ -106,7 +106,13 @@ export function Plot({ data, layout, config, className, height = 420, placeholde
       mergedLayout.showlegend = false;
     }
     const el = ref.current;
+    // `react` resolves a tick later. Switching view in that gap unmounts the
+    // chart and purges the node, and everything below then runs against an
+    // element whose Plotly internals are gone — which throws where nobody is
+    // listening for it.
+    let stale = false;
     Plotly.react(el, data, mergedLayout, mergedConfig).then(() => {
+      if (stale || !(el as any)._fullLayout) return;
       // Plotly keeps its own listener list, so clear ours before re-adding it
       // or a click fires once per render that has happened.
       const withEvents = el as any;
@@ -136,6 +142,9 @@ export function Plot({ data, layout, config, className, height = 420, placeholde
       // its first measurement and the chart is drawn short inside a taller box.
       Plotly.Plots.resize(el);
     });
+    return () => {
+      stale = true;
+    };
   }, [data, layout, config, placeholder, theme, onPointClick, onPointHover]);
 
   // Same problem from the other direction: the card can be resized by layout

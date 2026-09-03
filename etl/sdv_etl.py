@@ -44,6 +44,10 @@ REPOS = {
 }
 
 REGULAR_SEASON = 2  # ESPN season_type
+POSTSEASON = 3
+# What a shot row's `season_type` says, so the shot chart can show one, the
+# other, or both. Everything else in the app is regular season only.
+SEASON_TYPE_LABEL = {REGULAR_SEASON: "regular", POSTSEASON: "playoffs"}
 FIRST_SEASON = 2003
 TIMEOUT = 120
 
@@ -247,11 +251,30 @@ def build_teams(tb: pd.DataFrame, games: set) -> pd.DataFrame:
     }).sort_values(["season", "team_name"]).reset_index(drop=True)
 
 
-def build_shots(sh: pd.DataFrame) -> pd.DataFrame:
+def game_season_types(tb: pd.DataFrame) -> pd.Series:
+    """game_id -> "regular" or "playoffs", for labelling shots.
+
+    The shots dataset carries no season type of its own, so it borrows the team
+    box scores'. All-Star games are excluded the same way the rest of the ETL
+    excludes them; anything else (preseason, play-in oddities) is simply absent
+    from the map and its shots are dropped.
+    """
+    real = real_franchise_games(tb)
+    keep = tb[tb["season_type"].isin(SEASON_TYPE_LABEL)
+              & (tb["game_id"].isin(real) | (tb["season_type"] == POSTSEASON))]
+    types = keep.drop_duplicates("game_id").set_index("game_id")["season_type"]
+    return types.map(SEASON_TYPE_LABEL)
+
+
+def build_shots(sh: pd.DataFrame, season_types: pd.Series) -> pd.DataFrame:
     """Shot locations in the dashboard's court frame: hoop at (0, 0), tenths of
     a foot, y increasing toward half court."""
     # Team events (e.g. team rebounds) carry no athlete, so drop those too.
     s = sh.dropna(subset=["coordinate_x", "coordinate_y", "athlete_id_1"]).copy()
+    # A shot in a game the box scores don't cover can't be placed in a season
+    # type, and an unlabelled shot would quietly join whichever side is shown.
+    s["season_type"] = s["game_id"].map(season_types)
+    s = s[s["season_type"].notna()]
     # Drop free throws, which carry a placeholder location rather than a real one.
     s = s[~((s["coordinate_x_raw"] == FT_SENTINEL[0])
             & (s["coordinate_y_raw"] == FT_SENTINEL[1]))]
@@ -266,6 +289,7 @@ def build_shots(sh: pd.DataFrame) -> pd.DataFrame:
         "x": (across * side * 10.0).round(1),
         "y": ((HOOP_X - along.abs()) * 10.0).round(1),
         "made": s["scoring_play"].fillna(False).astype(int),
+        "season_type": s["season_type"].astype("category"),
     })
     # Keep what lands on the half court the UI draws.
     return out[(out["x"].between(-250, 250)) & (out["y"].between(-52.5, 417.5))].reset_index(drop=True)
@@ -358,7 +382,8 @@ def main(argv=None):
 
     print(f"shot coordinates ({shot_seasons[0]}-{shot_seasons[-1]})…")
     try:
-        shots = build_shots(load_seasons(league, "shots", shot_seasons))
+        shots = build_shots(load_seasons(league, "shots", shot_seasons),
+                            game_season_types(tb))
         write(shots, "shots", league, f"{shots['season'].nunique()} seasons")
     except SystemExit as e:
         print(f"  skipped: {e}")

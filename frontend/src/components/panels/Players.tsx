@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useState } from "react";
 import { api, type Meta, type PlayerInfo, type PlayerSeason } from "@/lib/api";
 import { Card, CardBody, CardHeader } from "@/components/ui/Card";
+import { RateToggle } from "@/components/ui/RateToggle";
 import { Plot } from "@/components/ui/Plot";
 import { Select } from "@/components/ui/Select";
 import { Avatar } from "@/components/ui/Avatar";
@@ -24,6 +25,7 @@ export function Players({ meta }: { meta: Meta }) {
   const [season, setSeason] = useState<any>(null);
   const [career, setCareer] = useState<any>(null);
   const [trendMetric, setTrendMetric] = useState("pts");
+  const [per, setPer] = useState("game");
   const [err, setErr] = useState<string | null>(null);
 
   useEffect(() => {
@@ -33,21 +35,21 @@ export function Players({ meta }: { meta: Meta }) {
     }
     setErr(null);
     api
-      .playerSeason(sel.playerId, sel.season, meta.league)
+      .playerSeason(sel.playerId, sel.season, meta.league, per)
       .then(setSeason)
       .catch((e) => {
         setErr(e.message);
         setSeason(null);
       });
-  }, [sel.playerId, sel.season, meta.league]);
+  }, [sel.playerId, sel.season, meta.league, per]);
 
   useEffect(() => {
     if (!sel.playerId) {
       setCareer(null);
       return;
     }
-    api.playerCareer(sel.playerId, meta.league).then(setCareer).catch(() => setCareer(null));
-  }, [sel.playerId, meta.league]);
+    api.playerCareer(sel.playerId, meta.league, 10, per).then(setCareer).catch(() => setCareer(null));
+  }, [sel.playerId, meta.league, per]);
 
   const stats = season?.stats ?? [];
 
@@ -86,7 +88,10 @@ export function Players({ meta }: { meta: Meta }) {
   return (
     <div className="space-y-4">
       <Card>
-        <CardHeader title="Player overview" />
+        <CardHeader
+          title="Player overview"
+          right={<RateToggle meta={meta} value={per} onChange={setPer} />}
+        />
         <CardBody>
           <PlayerSeasonSelector meta={meta} value={sel} onChange={setSel} onInfo={setInfo} />
           {err && <div className="mt-3 text-sm text-bad">{err}</div>}

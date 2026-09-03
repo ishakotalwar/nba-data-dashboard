@@ -18,6 +18,25 @@ CANDIDATE_METRICS = [
 ]
 INVERT_METRICS = {"drtg", "tov"}
 
+# Counting stats, which mean different things at different rates. Everything
+# else in the table is already a rate (`fg_pct`) or a total (`gp`), and is left
+# alone whichever basis is asked for.
+COUNTING_STATS = ["pts", "ast", "reb", "stl", "blk", "tov"]
+
+# How to express a counting stat. Stored per game; the rest divide out playing
+# time so a bench player and a starter can be read on one scale. Per 75 is the
+# possession count a starter actually uses in a game, so its numbers stay near
+# the per-game ones they replace, where per 100 inflates everything.
+RATE_BASES = {
+    "game": "Per game",
+    "per36": "Per 36 minutes",
+    "per75": "Per 75 possessions",
+    "per100": "Per 100 possessions",
+}
+
+# The possession bases and what each scales to.
+POSSESSION_BASES = {"per75": 75.0, "per100": 100.0}
+
 
 def _load(stem: str, league: League) -> pd.DataFrame:
     """Load `<stem><suffix>.parquet`, falling back to the pre-league
@@ -128,6 +147,25 @@ def lineup_seasons(league: League = DEFAULT) -> list[str]:
 
 
 @lru_cache(maxsize=8)
+def ratings(league: League = DEFAULT) -> pd.DataFrame | None:
+    """Player impact ratings, or None if `etl/lineup_etl.py` hasn't run.
+
+    Built from the same stints as `lineups`, so it covers the same seasons.
+    """
+    df = _load_optional("rating", league)
+    return _with_season_str(df) if df is not None else None
+
+
+@lru_cache(maxsize=8)
+def rating_seasons(league: League = DEFAULT) -> list[str]:
+    """Seasons with impact ratings, newest last."""
+    df = ratings(league)
+    if df is None or df.empty:
+        return []
+    return sorted(df["season"].unique().tolist())
+
+
+@lru_cache(maxsize=8)
 def schedule(league: League = DEFAULT) -> pd.DataFrame | None:
     """Scheduled games for this league, or None if the schedule ETL hasn't run.
 
@@ -165,6 +203,59 @@ def birthdates(league: League = DEFAULT) -> dict[int, pd.Timestamp]:
     if df is None or df.empty:
         return {}
     return dict(zip(df["player_id"].astype(int), pd.to_datetime(df["birthdate"])))
+
+
+@lru_cache(maxsize=24)
+def players_at(basis: str = "game", league: League = DEFAULT) -> pd.DataFrame:
+    """`players`, with the counting stats restated on `basis`.
+
+    Per-36 divides by minutes played. The possession bases divide by the
+    possessions the player's team used while he was on the floor, which nobody
+    publishes: it is his minutes times his team's pace, so they inherit two
+    approximations. The team's pace is Oliver's estimate rather than a count
+    (ESPN gives no possession data), and a player is assumed to have played at
+    his team's average pace rather than his own, which box scores cannot
+    separate.
+    Someone traded mid-season is priced at the pace of the team he played the
+    most games for, since that is the only team the row records.
+
+    Percentiles, filters and comparisons all read this, so a rate basis changes
+    the pool a player is ranked against and not just the number displayed.
+    """
+    if basis not in RATE_BASES:
+        raise ValueError(f"Unknown rate basis {basis!r}. Expected one of: "
+                         f"{', '.join(RATE_BASES)}")
+    df = players(league)
+    if basis == "game":
+        return df
+
+    out = clean_numeric(df.copy(), COUNTING_STATS + ["min", "gp"])
+    minutes = out["min"].where(out["min"] > 0)
+    if basis == "per36":
+        factor = 36.0 / minutes
+    else:
+        scale = POSSESSION_BASES[basis]
+        # pace is possessions per game, so a game's worth of minutes for one
+        # player is the team's floor time divided by the five on it.
+        pace = _team_pace(league).reindex(
+            pd.MultiIndex.from_arrays([out["season"], out["team_id"]])).to_numpy()
+        per_player_minutes = league.team_minutes / 5.0
+        possessions = pd.Series(pace, index=out.index) * (minutes / per_player_minutes)
+        factor = scale / possessions.where(possessions > 0)
+
+    for stat in COUNTING_STATS:
+        if stat in out.columns:
+            out[stat] = (out[stat] * factor).round(2)
+    return out
+
+
+@lru_cache(maxsize=8)
+def _team_pace(league: League = DEFAULT) -> pd.Series:
+    """(season, team_id) -> possessions per game, for per-100 conversion."""
+    tdf = teams(league)
+    pace = pd.to_numeric(tdf["pace"], errors="coerce")
+    return pd.Series(pace.to_numpy(),
+                     index=pd.MultiIndex.from_arrays([tdf["season"], tdf["team_id"]]))
 
 
 def has_data(league: League) -> bool:

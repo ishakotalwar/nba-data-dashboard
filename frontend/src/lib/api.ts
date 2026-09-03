@@ -57,6 +57,12 @@ export type Meta = {
   /** Seasons with rebuilt five-man lineups — a shorter list than `seasons`. */
   lineup_seasons: string[];
   metrics: string[];
+  /** Basis key -> label, e.g. { game: "Per game", per100: "Per 100 possessions" }. */
+  rate_bases: Record<string, string>;
+  /** Which games a shot chart can draw from: regular, playoffs, both. */
+  shot_season_types: Record<string, string>;
+  /** Seasons with player impact ratings — the same range as `lineup_seasons`. */
+  rating_seasons: string[];
   invert_metrics: string[];
   // Three-point geometry for this league, in tenths of a foot from the hoop.
   court: { arc: number; corner: number };
@@ -120,12 +126,13 @@ export const api = {
   askCapabilities: (league: LeagueKey) =>
     fetch(`${BASE}/ask/capabilities?${q_(league)}`).then((r) => j<any>(r)),
 
-  playerSeason: (playerId: number, season: string, league: LeagueKey) =>
-    fetch(`${BASE}/player/${playerId}/season/${encodeURIComponent(season)}?${q_(league)}`)
-      .then((r) => j<any>(r)),
+  playerSeason: (playerId: number, season: string, league: LeagueKey, per = "game") =>
+    fetch(
+      `${BASE}/player/${playerId}/season/${encodeURIComponent(season)}?${q_(league, { per })}`
+    ).then((r) => j<any>(r)),
 
-  playerCareer: (playerId: number, league: LeagueKey, recent = 10) =>
-    fetch(`${BASE}/player/${playerId}/career?${q_(league, { recent: String(recent) })}`)
+  playerCareer: (playerId: number, league: LeagueKey, recent = 10, per = "game") =>
+    fetch(`${BASE}/player/${playerId}/career?${q_(league, { recent: String(recent), per })}`)
       .then((r) => j<any>(r)),
 
   compare: (body: {
@@ -133,6 +140,7 @@ export const api = {
     metrics: string[];
     league: LeagueKey;
     mode: "season" | "career";
+    per?: string;
   }) =>
     fetch(`${BASE}/compare`, {
       method: "POST",
@@ -208,22 +216,50 @@ export const api = {
   teamFactors: (team: string, season: string, league: LeagueKey) =>
     fetch(`${BASE}/teams/factors?${q_(league, { team, season })}`).then((r) => j<any>(r)),
 
-  shots: (playerId: number, season: string, mode: "scatter" | "hex", league: LeagueKey) =>
-    fetch(`${BASE}/shots?${q_(league, { player_id: String(playerId), season, mode })}`)
-      .then((r) => j<any>(r)),
+  shots: (
+    playerId: number,
+    season: string,
+    mode: "scatter" | "hex",
+    league: LeagueKey,
+    seasonType = "regular"
+  ) =>
+    fetch(
+      `${BASE}/shots?${q_(league, {
+        player_id: String(playerId), season, mode, season_type: seasonType,
+      })}`
+    ).then((r) => j<any>(r)),
 
-  shotZones: (playerId: number, season: string, league: LeagueKey) =>
-    fetch(`${BASE}/shots/zones?${q_(league, { player_id: String(playerId), season })}`)
-      .then((r) => j<any>(r)),
+  shotZones: (playerId: number, season: string, league: LeagueKey, seasonType = "regular") =>
+    fetch(
+      `${BASE}/shots/zones?${q_(league, {
+        player_id: String(playerId), season, season_type: seasonType,
+      })}`
+    ).then((r) => j<any>(r)),
 
   shotCompare: (
     a: { player_id: number; season: string },
     b: { player_id: number; season: string },
-    league: LeagueKey
+    league: LeagueKey,
+    seasonType = "regular"
   ) =>
     fetch(`${BASE}/shots/compare`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ a, b, league }),
+      body: JSON.stringify({ a, b, league, season_type: seasonType }),
     }).then((r) => j<any>(r)),
+
+  /** Player impact ratings (RAPM) for one season. */
+  playerRatings: (
+    season: string,
+    league: LeagueKey,
+    opts: { minPoss?: number; limit?: number; team?: string } = {}
+  ) =>
+    fetch(
+      `${BASE}/players/ratings?${q_(league, {
+        season,
+        min_poss: String(opts.minPoss ?? 500),
+        limit: String(opts.limit ?? 100),
+        ...(opts.team ? { team: opts.team } : {}),
+      })}`
+    ).then((r) => j<any>(r)),
 };

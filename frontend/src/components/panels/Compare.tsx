@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useState } from "react";
 import { api, type Meta, type PlayerSeason } from "@/lib/api";
 import { Card, CardBody, CardHeader } from "@/components/ui/Card";
+import { RateToggle } from "@/components/ui/RateToggle";
 import { MultiSelect } from "@/components/ui/MultiSelect";
 import { Select } from "@/components/ui/Select";
 import { Plot } from "@/components/ui/Plot";
@@ -37,6 +38,7 @@ export function Compare({ meta, seed }: { meta: Meta; seed?: any }) {
   const [metrics, setMetrics] = useState<string[]>([]);
   const [view, setView] = useState<"radar" | "bar">("radar");
   const [careerMetric, setCareerMetric] = useState("pts");
+  const [per, setPer] = useState("game");
   const [data, setData] = useState<any>(null);
   const [sort, setSort] = useState<{ key: string; dir: 1 | -1 } | null>(null);
   const [err, setErr] = useState<string | null>(null);
@@ -53,6 +55,7 @@ export function Compare({ meta, seed }: { meta: Meta; seed?: any }) {
       .compare({
         selections: ready.map((p) => ({ player_id: p.playerId!, season: p.season || undefined })),
         metrics: mode === "career" ? [careerMetric] : metrics,
+        per,
         league: meta.league,
         mode,
       })
@@ -62,7 +65,7 @@ export function Compare({ meta, seed }: { meta: Meta; seed?: any }) {
         setData(null);
       });
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [JSON.stringify(ready), JSON.stringify(metrics), mode, careerMetric, meta.league]);
+  }, [JSON.stringify(ready), JSON.stringify(metrics), mode, careerMetric, per, meta.league]);
 
   const rows = data?.mode === "season" ? data.rows ?? [] : [];
   const curves = data?.mode === "career" ? data.curves ?? [] : [];
@@ -130,7 +133,9 @@ export function Compare({ meta, seed }: { meta: Meta; seed?: any }) {
         <CardHeader
           title="Compare player-seasons"
           right={
-            <div className="flex gap-4 text-sm">
+            <div className="flex items-center gap-5 text-sm">
+              <RateToggle meta={meta} value={per} onChange={setPer} />
+              <span aria-hidden className="h-4 w-px bg-border" />
               {MODES.map((m) => (
                 <button
                   key={m.v}

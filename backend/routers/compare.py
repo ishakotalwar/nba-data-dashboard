@@ -24,6 +24,7 @@ class CompareRequest(BaseModel):
     metrics: list[str] = []
     league: str | None = None
     mode: str = "season"  # "season" | "career"
+    per: str = "game"     # see data.RATE_BASES
 
 
 def _label(lg, name: str, season: str) -> str:
@@ -38,17 +39,21 @@ def compare(req: CompareRequest):
     if req.mode not in ("season", "career"):
         raise HTTPException(400, "mode must be 'season' or 'career'")
 
-    df = data.players(lg)
+    if req.per not in data.RATE_BASES:
+        raise HTTPException(400, f"Unknown rate basis {req.per!r}. Expected one of: "
+                                 f"{', '.join(data.RATE_BASES)}")
+    df = data.players_at(req.per, lg)
     mets = [m for m in req.metrics if m in data.available_metrics(lg)]
     if not mets:
         mets = [m for m in ("pts", "reb", "ast", "ts_pct") if m in data.available_metrics(lg)]
 
     if req.mode == "career":
         return _career(lg, df, req.selections, mets)
-    return _single_season(lg, df, req.selections[:5], mets)
+    return _single_season(lg, df, req.selections[:5], mets, req.per)
 
 
-def _single_season(lg, df: pd.DataFrame, selections: list[Selection], mets: list[str]) -> dict:
+def _single_season(lg, df: pd.DataFrame, selections: list[Selection], mets: list[str],
+                   per: str = "game") -> dict:
     ids = pd.to_numeric(df["player_id"], errors="coerce")
     rows, radar = [], {}
     league_avg: dict[str, dict[str, float]] = {}
@@ -65,7 +70,10 @@ def _single_season(lg, df: pd.DataFrame, selections: list[Selection], mets: list
         name = str(r["player_name"])
         key = _label(lg, name, str(season))
 
-        pool = analytics.gp_filtered_pool(analytics.season_pool(lg, season))
+        # Same basis as the values above it: percentiles and the league average
+        # are what the numbers get read against, so a mismatch here would rank a
+        # per-36 line inside a per-game field.
+        pool = analytics.gp_filtered_pool(analytics.season_pool(lg, season, per))
         if season not in league_avg:
             league_avg[season] = {
                 m: float(pd.to_numeric(pool[m], errors="coerce").mean())
@@ -93,7 +101,7 @@ def _single_season(lg, df: pd.DataFrame, selections: list[Selection], mets: list
         radar[key] = vals
 
     return analytics.json_safe({
-        "mode": "season", "metrics": mets, "rows": rows,
+        "mode": "season", "per": per, "metrics": mets, "rows": rows,
         "radar": {"features": mets, "values": radar},
         "league_avg": league_avg,
     })

@@ -83,9 +83,14 @@ def four_factors(row: pd.Series) -> dict:
     }
 
 
-def season_pool(league, season: str) -> pd.DataFrame:
-    """Every player row for one season."""
-    df = data.players(league)
+def season_pool(league, season: str, per: str = "game") -> pd.DataFrame:
+    """Every player row for one season, on the requested rate basis.
+
+    The basis has to reach this far in: percentiles compare a player against
+    everyone else, so ranking per-36 numbers inside a per-game pool would score
+    a bench player against starters' raw totals.
+    """
+    df = data.players_at(per, league)
     return df[df["season"] == str(season)].copy()
 
 

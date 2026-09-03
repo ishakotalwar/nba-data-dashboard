@@ -5,9 +5,9 @@ NBA and WNBA analytics, 2003 to now. Live at <https://full-court-six.vercel.app>
 ![Player overview](docs/screenshot.png)
 
 Stats side: player pages with percentiles and career trends, comparison, season
-similarity, shot charts, team tables, five-man lineups, and an explorer over
-every player-season. The Ask box turns a question turns natural language
-questions into queries.
+similarity, shot charts, team tables, five-man lineups, player impact ratings,
+and an explorer over every player-season, with counting stats on any of four
+rate bases. The Ask box turns natural language questions into queries.
 
 Predictions side: a game calendar with win probabilities and projected player
 lines, Elo ratings, and a search for any player's next season.
@@ -49,7 +49,17 @@ committed, so the deployed API calls nothing.
 - NBA seasons are labelled by the year they end, WNBA by their own: `2024` is
   2023-24 in one, 2024 in the other.
 - ESPN publishes no possession data, so ortg/drtg/pace are estimated with
-  Oliver's formula rather than counted.
+  Oliver's formula rather than counted. Player stats can be read per game, per
+  36 minutes, or per 75 or 100 possessions; the possession bases inherit that
+  estimate twice over, since a player's possessions are his minutes times his
+  team's pace and the box scores cannot say whether he played faster or slower
+  than his team. Changing the basis moves percentiles and ranks too, not just
+  the number shown.
+- It publishes no impact metric either — no BPM, no RPM — so the Impact page
+  computes RAPM from the rebuilt stints: the margin per 100 possessions each
+  player is credited with once the other nine on the floor are regressed out,
+  ridged toward zero so a player with few possessions lands near average
+  instead of at an extreme. It covers the same seasons the lineups do.
 - It publishes no lineup data either, but it does publish substitutions, so
   lineups are rebuilt by walking them. `--validate` checks the rebuilt minutes
   against the box score: they land within a minute for 99.5% of NBA
@@ -57,6 +67,9 @@ committed, so the deployed API calls nothing.
   fewer subs. The WNBA feed is unusable before 2020 and near-perfect after, so
   the two leagues start in different years. Fives that played under five
   minutes together aren't stored.
+- Shot charts can be drawn from the regular season, the playoffs or both, and
+  the league averages a player is measured against move with that choice.
+  Everything else in the app is regular season only.
 - The injury feed is a snapshot with no history, so it decides who plays but
   can't be backtested, and rookies have nothing to project from.
 - Similarity scores cluster in the high 90s: trust the order, not the number.

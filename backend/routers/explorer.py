@@ -34,6 +34,9 @@ class ExplorerRequest(BaseModel):
     team: str | None = None
     player: str | None = None
     filters: list[Filter] = []
+    # Counting stats are filtered and sorted on this basis too, so "25+ points"
+    # means 25 per whatever the caller picked.
+    per: str = "game"
     sort: str = "pts"
     dir: str = "desc"
     page: int = 1
@@ -50,6 +53,7 @@ def fields(league: str | None = None):
     return {
         "league": lg.key,
         "metrics": data.available_metrics(lg),
+        "rate_bases": data.RATE_BASES,
         "numeric_fields": numeric,
         "seasons": data.seasons(lg),
         "teams": sorted(df["team_abbr"].dropna().unique().tolist()) if "team_abbr" in df else [],
@@ -60,7 +64,10 @@ def fields(league: str | None = None):
 @router.post("/explorer")
 def explorer(req: ExplorerRequest):
     lg = leagues.get(req.league)
-    df = data.players(lg).copy()
+    if req.per not in data.RATE_BASES:
+        raise HTTPException(400, f"Unknown rate basis {req.per!r}. Expected one of: "
+                                 f"{', '.join(data.RATE_BASES)}")
+    df = data.players_at(req.per, lg).copy()
 
     if req.season_from:
         df = df[df["season"] >= str(req.season_from)]

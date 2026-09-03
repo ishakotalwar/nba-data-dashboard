@@ -18,6 +18,15 @@ from .. import analytics, data, leagues, live
 
 router = APIRouter(prefix="/api", tags=["shots"])
 
+# Which games a shot chart draws from. Everything else in the app is regular
+# season only, so that stays the default; the playoffs are a different sample
+# and worth seeing on their own, not silently folded in.
+SEASON_TYPES = {
+    "regular": "Regular season",
+    "playoffs": "Playoffs",
+    "both": "Both",
+}
+
 RESTRICTED_RADIUS = 40.0    # 4 ft from the rim
 PAINT_HALF_WIDTH = 80.0     # the lane is 16 ft wide
 PAINT_DEPTH = 137.5         # to the free-throw line
@@ -76,10 +85,31 @@ def _zoned(league_key: str) -> pd.DataFrame:
     return out
 
 
+def _check_season_type(season_type: str) -> None:
+    if season_type not in SEASON_TYPES:
+        raise HTTPException(400, f"Unknown season type {season_type!r}. Expected one "
+                                 f"of: {', '.join(SEASON_TYPES)}")
+
+
+def _of_type(df: pd.DataFrame, season_type: str) -> pd.DataFrame:
+    """Narrow to regular season or playoffs. Files built before shots carried a
+    season type have no column to filter on, and are left whole."""
+    if season_type == "both" or "season_type" not in df.columns:
+        return df
+    return df[df["season_type"] == season_type]
+
+
 @lru_cache(maxsize=64)
-def _league_zone_rates(league_key: str, season: str) -> dict[str, float]:
-    """League-wide FG% per zone for one season."""
-    df = _zoned(league_key)
+def _league_zone_rates(league_key: str, season: str,
+                       season_type: str = "regular") -> dict[str, float]:
+    """League-wide FG% per zone for one season, on the same games as the player.
+
+    The comparison only means something if both sides are drawn from the same
+    kind of game: playoff defenses are better, so a player's playoff shooting
+    against a regular-season league average would read as a decline he didn't
+    have.
+    """
+    df = _of_type(_zoned(league_key), season_type)
     sub = df[df["season"] == str(season)]
     if sub.empty:
         return {}
@@ -87,15 +117,17 @@ def _league_zone_rates(league_key: str, season: str) -> dict[str, float]:
     return {str(k): float(v) for k, v in g.items()}
 
 
-def _player_shots(league_key: str, player_id: int, season: str) -> pd.DataFrame:
-    df = _zoned(league_key)
+def _player_shots(league_key: str, player_id: int, season: str,
+                  season_type: str = "regular") -> pd.DataFrame:
+    df = _of_type(_zoned(league_key), season_type)
     ids = pd.to_numeric(df["player_id"], errors="coerce")
     return df[(ids == player_id) & (df["season"] == str(season))]
 
 
-def _zone_table(league_key: str, player_id: int, season: str) -> list[dict]:
-    sub = _player_shots(league_key, player_id, season)
-    lg_rates = _league_zone_rates(league_key, season)
+def _zone_table(league_key: str, player_id: int, season: str,
+                season_type: str = "regular") -> list[dict]:
+    sub = _player_shots(league_key, player_id, season, season_type)
+    lg_rates = _league_zone_rates(league_key, season, season_type)
     total = len(sub)
     rows = []
     for zone in ZONE_ORDER:
@@ -117,18 +149,22 @@ def _zone_table(league_key: str, player_id: int, season: str) -> list[dict]:
 
 
 @router.get("/shots/zones")
-def shot_zones(player_id: int, season: str, league: str | None = None):
+def shot_zones(player_id: int, season: str, league: str | None = None,
+               season_type: str = "regular"):
     lg = leagues.get(league)
-    sub = _player_shots(lg.key, player_id, season)
+    _check_season_type(season_type)
+    sub = _player_shots(lg.key, player_id, season, season_type)
     if sub.empty:
-        raise HTTPException(404, f"No {lg.label} shots for player {player_id} in {season}")
+        raise HTTPException(404, f"No {lg.label} {SEASON_TYPES[season_type].lower()} "
+                                 f"shots for player {player_id} in {season}")
     return analytics.json_safe({
         "player_id": player_id,
         "player_name": str(sub.iloc[0]["player_name"]),
         "season": str(season),
+        "season_type": season_type,
         "total_fga": int(len(sub)),
         "fg_pct": float(sub["made"].mean()),
-        "zones": _zone_table(lg.key, player_id, season),
+        "zones": _zone_table(lg.key, player_id, season, season_type),
     })
 
 
@@ -136,25 +172,29 @@ class ShotCompareRequest(BaseModel):
     a: dict  # {player_id, season}
     b: dict
     league: str | None = None
+    season_type: str = "regular"
 
 
 @router.post("/shots/compare")
 def shot_compare(req: ShotCompareRequest):
     """Two player-seasons side by side, zone for zone."""
     lg = leagues.get(req.league)
+    _check_season_type(req.season_type)
     out = {}
     for side, sel in (("a", req.a), ("b", req.b)):
         pid, season = int(sel["player_id"]), str(sel["season"])
-        sub = _player_shots(lg.key, pid, season)
+        sub = _player_shots(lg.key, pid, season, req.season_type)
         if sub.empty:
-            raise HTTPException(404, f"No {lg.label} shots for player {pid} in {season}")
+            raise HTTPException(404, f"No {lg.label} "
+                                     f"{SEASON_TYPES[req.season_type].lower()} shots "
+                                     f"for player {pid} in {season}")
         out[side] = {
             "player_id": pid,
             "player_name": str(sub.iloc[0]["player_name"]),
             "season": season,
             "total_fga": int(len(sub)),
             "fg_pct": float(sub["made"].mean()),
-            "zones": _zone_table(lg.key, pid, season),
+            "zones": _zone_table(lg.key, pid, season, req.season_type),
         }
     return analytics.json_safe(out)
 
@@ -165,13 +205,16 @@ def shots(
     season: str,
     mode: str = Query("hex", pattern="^(scatter|hex)$"),
     league: str | None = None,
+    season_type: str = "regular",
 ):
     """Raw shot locations, as points or hex-binned zones."""
     lg = leagues.get(league)
+    _check_season_type(season_type)
     local = data.shots(lg)
     if local is not None:
-        ids = pd.to_numeric(local["player_id"], errors="coerce")
-        sdf = local[(ids == player_id) & (local["season"] == str(season))]
+        sub = _of_type(local, season_type)
+        ids = pd.to_numeric(sub["player_id"], errors="coerce")
+        sdf = sub[(ids == player_id) & (sub["season"] == str(season))]
     else:
         try:
             sdf = live.fetch_shots(player_id, season, lg)
@@ -179,10 +222,12 @@ def shots(
             raise HTTPException(502, live.friendly_upstream_message(e, lg)) from e
 
     if sdf.empty:
-        return {"player_id": player_id, "season": str(season), "mode": mode, "shots": [], "hexes": []}
+        return {"player_id": player_id, "season": str(season), "mode": mode,
+                "season_type": season_type, "shots": [], "hexes": []}
 
     name = str(sdf.iloc[0].get("player_name", ""))
     base = {"player_id": player_id, "player": name, "season": str(season),
+            "season_type": season_type,
             "count": int(len(sdf)), "fg_pct": float(sdf["made"].mean())}
 
     if mode == "scatter":

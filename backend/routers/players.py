@@ -12,8 +12,14 @@ router = APIRouter(prefix="/api", tags=["players"])
 OVERVIEW_METRICS = ["pts", "reb", "ast", "fg_pct", "three_pct", "ft_pct", "ts_pct", "usg_pct"]
 
 
-def _player_rows(lg, player_id: int) -> pd.DataFrame:
-    df = data.players(lg)
+def _check_basis(per: str) -> None:
+    if per not in data.RATE_BASES:
+        raise HTTPException(400, f"Unknown rate basis {per!r}. Expected one of: "
+                                 f"{', '.join(data.RATE_BASES)}")
+
+
+def _player_rows(lg, player_id: int, per: str = "game") -> pd.DataFrame:
+    df = data.players_at(per, lg)
     rows = df[pd.to_numeric(df["player_id"], errors="coerce") == player_id]
     if rows.empty:
         raise HTTPException(404, f"No {lg.label} player with id {player_id}")
@@ -95,16 +101,18 @@ def player(player_id: int, league: str | None = None):
 
 
 @router.get("/player/{player_id}/season/{season}")
-def player_season(player_id: int, season: str, league: str | None = None):
+def player_season(player_id: int, season: str, league: str | None = None,
+                  per: str = "game"):
     """One player-season: headline stats with percentile and league rank."""
     lg = leagues.get(league)
-    rows = _player_rows(lg, player_id)
+    _check_basis(per)
+    rows = _player_rows(lg, player_id, per)
     row = rows[rows["season"] == str(season)]
     if row.empty:
         raise HTTPException(404, f"No {lg.label} season {season} for player {player_id}")
     r = row.iloc[0]
 
-    pool = analytics.gp_filtered_pool(analytics.season_pool(lg, season))
+    pool = analytics.gp_filtered_pool(analytics.season_pool(lg, season, per))
     available = [m for m in OVERVIEW_METRICS if m in rows.columns]
     stats = []
     for m in available:
@@ -126,6 +134,7 @@ def player_season(player_id: int, season: str, league: str | None = None):
         "team": r.get("team_abbr"),
         "gp": r.get("gp"),
         "min": r.get("min"),
+        "per": per,
         "pool_size": int(len(pool)),
         "bio": _bio(lg, player_id, str(season)),
         "stats": stats,
@@ -133,10 +142,16 @@ def player_season(player_id: int, season: str, league: str | None = None):
 
 
 @router.get("/player/{player_id}/career")
-def player_career(player_id: int, league: str | None = None, recent: int = 10):
-    """Season-by-season rows for the trend chart, plus the most recent games."""
+def player_career(player_id: int, league: str | None = None, recent: int = 10,
+                  per: str = "game"):
+    """Season-by-season rows for the trend chart, plus the most recent games.
+
+    The per-game log at the end is always per game: a single game has no rate
+    to restate it on.
+    """
     lg = leagues.get(league)
-    rows = _player_rows(lg, player_id)
+    _check_basis(per)
+    rows = _player_rows(lg, player_id, per)
     mets = data.available_metrics(lg)
     cols = ["season", "team_abbr", "gp", "min"] + [m for m in mets if m in rows.columns]
     career = rows[[c for c in cols if c in rows.columns]].copy()
@@ -170,3 +185,36 @@ def player_career(player_id: int, league: str | None = None, recent: int = 10):
 def player_search(q: str = "", limit: int = 12, league: str | None = None):
     """Static roster search from nba_api's bundled data (names and ids only)."""
     return {"results": live.search_players(q, limit=limit, league=leagues.get(league))}
+
+
+@router.get("/players/ratings")
+def player_ratings(season: str, league: str | None = None, team: str | None = None,
+                   min_poss: float = 500, limit: int = 100):
+    """Impact ratings for one season, best first.
+
+    RAPM is the margin per 100 possessions a player is responsible for once the
+    other nine on the floor are regressed out — see `etl/lineup_etl.py`. The raw
+    on-court and on-off numbers come back beside it, since the gap between what
+    happened while a player was out there and what he is credited with is the
+    point of the adjustment.
+    """
+    lg = leagues.get(league)
+    df = data.ratings(lg)
+    if df is None:
+        raise HTTPException(404, f"No {lg.label} rating data. "
+                                 f"Run `python etl/lineup_etl.py --league {lg.key}`.")
+    sub = df[df["season"] == str(season)]
+    if sub.empty:
+        raise HTTPException(404, f"No {lg.label} ratings for {season}. Seasons on disk: "
+                                 f"{', '.join(data.rating_seasons(lg)) or 'none'}")
+    if team:
+        sub = sub[sub["team_name"] == team]
+    qualified = sub[pd.to_numeric(sub["poss"], errors="coerce").fillna(0) >= float(min_poss)]
+    ordered = qualified.sort_values("rapm", ascending=False).head(limit)
+    return analytics.json_safe({
+        "season": str(season), "league": lg.key, "team": team,
+        "min_poss": float(min_poss),
+        "qualified": int(len(qualified)),
+        "pool": int(len(sub)),
+        "rows": data.records(ordered),
+    })

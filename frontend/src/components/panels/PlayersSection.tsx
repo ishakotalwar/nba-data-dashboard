@@ -4,9 +4,11 @@ import { ViewTabs } from "@/components/ui/ViewTabs";
 import { Players } from "./Players";
 import { Similar } from "./Similar";
 import { ShotAnalysis } from "./ShotAnalysis";
+import { Ratings } from "./Ratings";
 
 const VIEWS = [
   { v: "overview", label: "Overview" },
+  { v: "impact", label: "Impact" },
   { v: "similar", label: "Similarity" },
   { v: "shots", label: "Shot Analysis" },
 ] as const;
@@ -32,6 +34,7 @@ export function PlayersSection({
     <div className="space-y-4">
       <ViewTabs views={VIEWS} value={active} onChange={setActive} />
       {active === "overview" && <Players meta={meta} />}
+      {active === "impact" && <Ratings meta={meta} />}
       {active === "similar" && <Similar meta={meta} seed={seedFor("similarity")} />}
       {active === "shots" && <ShotAnalysis meta={meta} seed={seedFor("shots")} />}
     </div>

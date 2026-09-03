@@ -14,8 +14,12 @@ essentially every team-period; the handful it doesn't are patched from whoever
 finished the previous period. See `--validate`, which checks the rebuilt
 minutes against the box score and prints the error.
 
-Outputs `data/lineup_<league>.parquet`: one row per season, team and five-man
-group, with minutes, possessions, points for and against.
+Outputs two files per league. `data/lineup_<league>.parquet` has one row per
+season, team and five-man group, with minutes, possessions and points for and
+against. `data/rating_<league>.parquet` has one row per player-season: the
+margin per 100 possessions the stints say he is responsible for once his
+teammates and opponents are regressed out (RAPM), beside the raw on-court and
+on-off numbers it adjusts.
 
 Play-by-play is ~20 MB a season and none of it is committed — only the
 aggregate, which is a few MB for two decades of both leagues.
@@ -306,6 +310,117 @@ def build_lineups(st: pd.DataFrame, box: pd.DataFrame, season: int) -> pd.DataFr
     return out.sort_values("min", ascending=False).reset_index(drop=True)
 
 
+def build_ratings(st: pd.DataFrame, box: pd.DataFrame, season: int) -> pd.DataFrame:
+    """One overall impact number per player, from the stints they played in.
+
+    Raw plus-minus answers "what happened while he was out there", which is as
+    much a statement about his teammates and opponents as about him. Regressing
+    the point differential of every stint on the ten players standing in it
+    separates those: each player gets the margin per 100 possessions he is
+    responsible for, holding the other nine constant. That is RAPM, and the
+    "regularized" half matters — a thousand players over 37,000 stints is an
+    underdetermined problem, so the fit is ridged toward zero and a player with
+    few possessions is pulled back to average rather than handed a wild number.
+
+    The ridge strength is chosen by cross-validation rather than fixed, since
+    the right amount of shrinkage depends on how many stints a season has.
+
+    Raw on-court and on-off numbers come back alongside it, unadjusted, because
+    the gap between them and the fitted number is the useful part.
+    """
+    from scipy import sparse                     # ETL-only dependency
+    from sklearn.linear_model import RidgeCV
+
+    stints = st.copy()
+    # Same possession estimate the lineup table uses: Oliver's count from each
+    # side, averaged, since both teams take the same trips down the floor.
+    home = (stints["home_fga"] + 0.44 * stints["home_fta"]
+            - stints["home_oreb"] + stints["home_tov"])
+    away = (stints["away_fga"] + 0.44 * stints["away_fta"]
+            - stints["away_oreb"] + stints["away_tov"])
+    stints["poss"] = 0.5 * (home + away)
+    stints = stints[stints["poss"] > 0].reset_index(drop=True)
+    if stints.empty:
+        return pd.DataFrame()
+
+    players = sorted({p for five in stints["home_five"] for p in five}
+                     | {p for five in stints["away_five"] for p in five})
+    index = {p: i for i, p in enumerate(players)}
+
+    rows, cols, vals = [], [], []
+    for i, (home, away) in enumerate(zip(stints["home_five"], stints["away_five"])):
+        for p in home:
+            rows.append(i); cols.append(index[p]); vals.append(1.0)
+        for p in away:
+            rows.append(i); cols.append(index[p]); vals.append(-1.0)
+    design = sparse.csr_matrix((vals, (rows, cols)),
+                               shape=(len(stints), len(players)))
+
+    poss = stints["poss"].to_numpy(dtype=float)
+    margin = (stints["home_pts"] - stints["away_pts"]).to_numpy(dtype=float)
+    # Per 100 possessions, weighted by the possessions behind it: a 12-point
+    # stint over 4 possessions should not outweigh a season of evidence.
+    target = margin / poss * 100.0
+
+    model = RidgeCV(alphas=[500.0, 1000.0, 2000.0, 4000.0, 8000.0, 16000.0])
+    model.fit(design, target, sample_weight=poss)
+    rapm = dict(zip(players, model.coef_))
+
+    # Raw on-court and off-court totals, per player and per team.
+    on: dict = defaultdict(lambda: [0.0, 0.0, 0.0, 0.0])   # poss, pf, pa, seconds
+    team_totals: dict = defaultdict(lambda: [0.0, 0.0, 0.0])
+    player_teams: dict = defaultdict(set)
+    for r in stints.itertuples():
+        for five, team, pf, pa in ((r.home_five, r.home_id, r.home_pts, r.away_pts),
+                                   (r.away_five, r.away_id, r.away_pts, r.home_pts)):
+            totals = team_totals[team]
+            totals[0] += r.poss; totals[1] += pf; totals[2] += pa
+            for p in five:
+                slot = on[(p, team)]
+                slot[0] += r.poss; slot[1] += pf; slot[2] += pa; slot[3] += r.seconds
+                player_teams[p].add(team)
+
+    names = dict(zip(box["athlete_id"].astype(float), box["athlete_display_name"]))
+    teams = (box.drop_duplicates("team_id")
+                .set_index("team_id")[["team_display_name", "team_abbreviation"]])
+    games = (box.groupby("athlete_id")["game_id"].nunique().to_dict())
+
+    out = []
+    for p in players:
+        p_poss = p_pf = p_pa = p_secs = 0.0
+        off_poss = off_pf = off_pa = 0.0
+        for team in player_teams[p]:
+            slot = on[(p, team)]
+            p_poss += slot[0]; p_pf += slot[1]; p_pa += slot[2]; p_secs += slot[3]
+            total = team_totals[team]
+            off_poss += total[0] - slot[0]
+            off_pf += total[1] - slot[1]
+            off_pa += total[2] - slot[2]
+        # Team of record: where he played the most, matching the players table.
+        main_team = max(player_teams[p], key=lambda t: on[(p, t)][0])
+        on_net = 100.0 * (p_pf - p_pa) / p_poss if p_poss else None
+        off_net = 100.0 * (off_pf - off_pa) / off_poss if off_poss else None
+        out.append({
+            "season": str(season),
+            "player_id": int(p),
+            "player_name": names.get(p, str(int(p))),
+            "team_id": int(main_team),
+            "team_name": teams["team_display_name"].get(main_team),
+            "team_abbr": teams["team_abbreviation"].get(main_team),
+            "games": int(games.get(int(p), 0)),
+            "min": round(p_secs / 60, 1),
+            "poss": round(p_poss, 1),
+            "rapm": round(float(rapm[p]), 2),
+            "on_net": None if on_net is None else round(on_net, 1),
+            "off_net": None if off_net is None else round(off_net, 1),
+            "on_off": None if on_net is None or off_net is None else round(on_net - off_net, 1),
+            "plus_minus": int(p_pf - p_pa),
+        })
+    frame = pd.DataFrame(out)
+    print(f"    ratings: {len(frame)} players, ridge alpha {model.alpha_:.0f}")
+    return frame.sort_values("rapm", ascending=False).reset_index(drop=True)
+
+
 def validate(played_seconds: dict, box: pd.DataFrame) -> None:
     """Compare rebuilt minutes against the box score, and say how far off."""
     rebuilt = pd.Series(played_seconds, dtype=float) / 60
@@ -333,7 +448,9 @@ def parse_seasons(spec: str | None, league: League) -> list[int]:
     return [int(spec)]
 
 
-def season_lineups(league: League, season: int, check: bool) -> pd.DataFrame | None:
+def season_lineups(league: League, season: int, check: bool
+                   ) -> tuple[pd.DataFrame, pd.DataFrame] | None:
+    """Rebuild one season, returning its lineups and its player ratings."""
     pbp = fetch(league, "pbp", "play_by_play", season)
     box = fetch(league, "player_box", "player_box", season)
     if pbp is None or box is None:
@@ -357,9 +474,10 @@ def season_lineups(league: League, season: int, check: bool) -> pd.DataFrame | N
     lineups = build_lineups(st, box, season)
     print(f"  {season}: {pbp['game_id'].nunique():>4} games, {len(st):>6} stints, "
           f"{len(lineups):>5} lineups")
+    ratings = build_ratings(st, box, season)
     if check:
         validate(played_seconds, box)
-    return lineups
+    return lineups, ratings
 
 
 def main(argv=None) -> None:
@@ -378,35 +496,41 @@ def main(argv=None) -> None:
     seasons = parse_seasons(args.seasons, league)
     print(f"[{league.label}] lineups from play-by-play, {seasons[0]}-{seasons[-1]}")
 
-    frames = [f for f in (season_lineups(league, yr, args.validate) for yr in seasons)
-              if f is not None]
-    if not frames:
+    built = [r for r in (season_lineups(league, yr, args.validate) for yr in seasons)
+             if r is not None]
+    if not built:
         raise SystemExit(f"No {league.label} play-by-play downloaded.")
 
-    out = pd.concat(frames, ignore_index=True)
-    path = DATA / f"lineup{league.suffix}.parquet"
+    write_merged(pd.concat([b[0] for b in built], ignore_index=True),
+                 f"lineup{league.suffix}", ["season", "team_name", "min"],
+                 [True, True, False])
+    write_merged(pd.concat([b[1] for b in built], ignore_index=True),
+                 f"rating{league.suffix}", ["season", "rapm"], [True, False])
 
-    # Seasons already on disk that this run didn't rebuild are kept: refreshing
-    # the current season is a nightly job, re-downloading a decade of
-    # play-by-play to do it is not.
+
+def write_merged(out: pd.DataFrame, stem: str, sort_by: list[str],
+                 ascending: list[bool]) -> None:
+    """Write one output, keeping seasons this run didn't rebuild.
+
+    Refreshing the current season is a nightly job; re-downloading a decade of
+    play-by-play to do it is not.
+    """
+    path = DATA / f"{stem}.parquet"
     if path.exists():
         old = pd.read_parquet(path)
-        # A file from an older version of this script describes the same
-        # lineups differently; merging the two would leave half the rows with
-        # holes in them. Rebuild instead.
+        # A file from an older version of this script describes the same rows
+        # differently; merging the two would leave half of them with holes.
         if list(old.columns) != list(out.columns):
             print(f"{path.name} has an older schema — rebuilding it from this run only")
             old = old.iloc[0:0]
         kept = old[~old["season"].astype(str).isin(set(out["season"]))]
         if not kept.empty:
-            print(f"keeping {kept['season'].nunique()} season(s) already built")
+            print(f"keeping {kept['season'].nunique()} season(s) already in {path.name}")
             out = pd.concat([kept, out], ignore_index=True)
 
-    out = out.sort_values(["season", "team_name", "min"],
-                          ascending=[True, True, False]).reset_index(drop=True)
+    out = out.sort_values(sort_by, ascending=ascending).reset_index(drop=True)
     out.to_parquet(path, index=False)
-    print(f"wrote {path.name:<26} {len(out):>7} rows  "
-          f"{out['season'].nunique()} seasons, {out['team_name'].nunique()} teams")
+    print(f"wrote {path.name:<26} {len(out):>7} rows  {out['season'].nunique()} seasons")
 
 
 if __name__ == "__main__":

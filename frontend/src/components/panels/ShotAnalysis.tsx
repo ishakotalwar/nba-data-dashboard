@@ -574,6 +574,7 @@ export function ShotAnalysis({ meta, seed }: { meta: Meta; seed?: any }) {
   const [b, setB] = useState<PlayerSeason>(emptySelection);
   const [comparing, setComparing] = useState(false);
   const [mode, setMode] = useState<ChartMode>("hex");
+  const [seasonType, setSeasonType] = useState("regular");
   const [shotsA, setShotsA] = useState<any>(null);
   const [shotsB, setShotsB] = useState<any>(null);
   const [zonesA, setZonesA] = useState<any>(null);
@@ -593,34 +594,54 @@ export function ShotAnalysis({ meta, seed }: { meta: Meta; seed?: any }) {
     });
   }, [seed]);
 
+  // Requests come back out of order — scrubbing the season selector fires one
+  // per stop, and a slow early one resolving last would overwrite the answer
+  // to the selection actually on screen. Each side counts its requests and
+  // ignores anything but the newest.
+  const latest = useRef({ a: 0, b: 0 });
+
   const load = (
+    side: "a" | "b",
     sel: PlayerSeason,
     setShots: (v: any) => void,
     setZones: (v: any) => void
   ) => {
+    const ticket = ++latest.current[side];
+    const current = () => latest.current[side] === ticket;
     if (!sel.playerId || !sel.season) {
       setShots(null);
       setZones(null);
       return;
     }
     api
-      .shots(sel.playerId, sel.season, mode === "scatter" ? "scatter" : "hex", meta.league)
-      .then(setShots)
-      .catch(() => setShots(null));
+      .shots(sel.playerId, sel.season, mode === "scatter" ? "scatter" : "hex",
+             meta.league, seasonType)
+      .then((v) => current() && setShots(v))
+      .catch(() => current() && setShots(null));
     api
-      .shotZones(sel.playerId, sel.season, meta.league)
-      .then(setZones)
+      .shotZones(sel.playerId, sel.season, meta.league, seasonType)
+      .then((v) => current() && setZones(v))
       .catch((e) => {
+        if (!current()) return;
         setZones(null);
-        setErr(e.message);
+        // "No shots" is the ordinary answer for a player whose season ended
+        // before the playoffs, not a failure — and the panel knows his name,
+        // where the API only had an id to report.
+        setErr(
+          /no .* shots/i.test(e.message)
+            ? `${sel.playerName || "This player"} has no ` +
+              `${(meta.shot_season_types?.[seasonType] ?? seasonType).toLowerCase()} ` +
+              `shots in ${formatSeason(sel.season, meta.season_format)}.`
+            : e.message
+        );
       });
   };
 
   useEffect(() => {
     setErr(null);
-    load(a, setShotsA, setZonesA);
+    load("a", a, setShotsA, setZonesA);
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [a.playerId, a.season, mode, meta.league]);
+  }, [a.playerId, a.season, mode, seasonType, meta.league]);
 
   useEffect(() => {
     if (!comparing) {
@@ -628,9 +649,9 @@ export function ShotAnalysis({ meta, seed }: { meta: Meta; seed?: any }) {
       setZonesB(null);
       return;
     }
-    load(b, setShotsB, setZonesB);
+    load("b", b, setShotsB, setZonesB);
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [b.playerId, b.season, comparing, mode, meta.league]);
+  }, [b.playerId, b.season, comparing, mode, seasonType, meta.league]);
 
   const zoneRows = zonesA?.zones ?? [];
 
@@ -641,7 +662,9 @@ export function ShotAnalysis({ meta, seed }: { meta: Meta; seed?: any }) {
           title="Shot analysis"
           subtitle="Hover a court zone to peek its numbers — click to highlight that section and open its breakdown against the league."
           right={
-            <div className="flex gap-4 text-sm">
+            <div className="flex items-center gap-5 text-sm">
+              <SeasonTypeToggle meta={meta} value={seasonType} onChange={setSeasonType} />
+              <span aria-hidden className="h-4 w-px bg-border" />
               {MODES.map(({ value: m, label }) => (
                 <button
                   key={m}
@@ -825,6 +848,42 @@ export function ShotAnalysis({ meta, seed }: { meta: Meta; seed?: any }) {
           )}
         </CardBody>
       </Card>
+    </div>
+  );
+}
+
+
+/**
+ * Which games the chart draws from. Playoff shooting sits against a playoff
+ * league average, so the zone comparison stays like for like.
+ */
+function SeasonTypeToggle({
+  meta,
+  value,
+  onChange,
+}: {
+  meta: Meta;
+  value: string;
+  onChange: (v: string) => void;
+}) {
+  const types = meta.shot_season_types ?? {};
+  const keys = Object.keys(types);
+  if (keys.length < 2) return null;
+  return (
+    <div className="flex items-center gap-4">
+      {keys.map((k) => (
+        <button
+          key={k}
+          type="button"
+          onClick={() => onChange(k)}
+          className={cn(
+            "border-b-2 pb-0.5 transition",
+            k === value ? "border-accent text-ink" : "border-transparent text-mute hover:text-ink"
+          )}
+        >
+          {types[k]}
+        </button>
+      ))}
     </div>
   );
 }
