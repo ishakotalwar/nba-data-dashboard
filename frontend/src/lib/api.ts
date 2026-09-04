@@ -63,6 +63,10 @@ export type Meta = {
   shot_season_types: Record<string, string>;
   /** Seasons with player impact ratings — the same range as `lineup_seasons`. */
   rating_seasons: string[];
+  /** Seasons whose postseason was large enough to fit — a shorter list. */
+  rating_playoff_seasons: string[];
+  /** Which games a rating was fit on: regular season or playoffs. */
+  rating_season_types: Record<string, string>;
   invert_metrics: string[];
   // Three-point geometry for this league, in tenths of a foot from the hoop.
   court: { arc: number; corner: number };
@@ -213,6 +217,22 @@ export const api = {
       })}`
     ).then((r) => j<any>(r)),
 
+  /** What a team did with a player on the floor, and without him. */
+  teamWowy: (
+    season: string,
+    team: string,
+    league: LeagueKey,
+    opts: { playerA?: number; playerB?: number } = {}
+  ) =>
+    fetch(
+      `${BASE}/teams/wowy?${q_(league, {
+        season,
+        team,
+        ...(opts.playerA ? { player_a: String(opts.playerA) } : {}),
+        ...(opts.playerB ? { player_b: String(opts.playerB) } : {}),
+      })}`
+    ).then((r) => j<any>(r)),
+
   teamFactors: (team: string, season: string, league: LeagueKey) =>
     fetch(`${BASE}/teams/factors?${q_(league, { team, season })}`).then((r) => j<any>(r)),
 
@@ -248,17 +268,18 @@ export const api = {
       body: JSON.stringify({ a, b, league, season_type: seasonType }),
     }).then((r) => j<any>(r)),
 
-  /** Player impact ratings (RAPM) for one season. */
+  /** Player impact ratings for one season, regular or postseason. */
   playerRatings: (
     season: string,
     league: LeagueKey,
-    opts: { minPoss?: number; limit?: number; team?: string } = {}
+    opts: { minShare?: number; limit?: number; team?: string; seasonType?: string } = {}
   ) =>
     fetch(
       `${BASE}/players/ratings?${q_(league, {
         season,
-        min_poss: String(opts.minPoss ?? 500),
-        limit: String(opts.limit ?? 100),
+        season_type: opts.seasonType ?? "regular",
+        min_share: String(opts.minShare ?? 0.55),
+        limit: String(opts.limit ?? 250),
         ...(opts.team ? { team: opts.team } : {}),
       })}`
     ).then((r) => j<any>(r)),

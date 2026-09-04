@@ -5,9 +5,9 @@ NBA and WNBA analytics, 2003 to now. Live at <https://full-court-six.vercel.app>
 ![Player overview](docs/screenshot.png)
 
 Stats side: player pages with percentiles and career trends, comparison, season
-similarity, shot charts, team tables, five-man lineups, player impact ratings,
-and an explorer over every player-season, with counting stats on any of four
-rate bases. The Ask box turns natural language questions into queries.
+similarity, shot charts, team tables, five-man lineups, with-or-without splits,
+player impact ratings, and an explorer over every player-season, with counting
+stats on any of four rate bases. The Ask box turns natural language questions into queries.
 
 Predictions side: a game calendar with win probabilities and projected player
 lines, Elo ratings, and a search for any player's next season.
@@ -56,10 +56,24 @@ committed, so the deployed API calls nothing.
   than his team. Changing the basis moves percentiles and ranks too, not just
   the number shown.
 - It publishes no impact metric either — no BPM, no RPM — so the Impact page
-  computes RAPM from the rebuilt stints: the margin per 100 possessions each
-  player is credited with once the other nine on the floor are regressed out,
-  ridged toward zero so a player with few possessions lands near average
-  instead of at an extreme. It covers the same seasons the lineups do.
+  computes one from the rebuilt stints. Every stint becomes two observations,
+  one per direction of play: the five attacking carry +1 in their offensive
+  column, the five defending -1 in their defensive column, against points
+  scored per 100 possessions. That gives each player an offensive and a
+  defensive number that read the same way (positive is good) and add up to his
+  total, plus a home-court term so the advantage isn't charged to whoever
+  happened to be playing at home. The fit is ridged toward zero by a penalty
+  fixed per league — re-choosing it each season would leave every season on a
+  scale of its own, and the NBA needs a heavier hand than the WNBA because five
+  times the possessions constrain it far less. Postseasons are fit separately
+  where they are long enough to hold a rating, which no WNBA one is. It covers
+  the same seasons the lineups do.
+- The with-or-without splits are built from every stint rather than from the
+  lineup table, which keeps only fives that played five minutes together. Those
+  short-lived fives are mostly bench units — the very minutes the "without" half
+  is made of — so the splits would otherwise be biased against the thing they
+  exist to measure. They are raw: no adjustment for teammates or opponents,
+  which is what the Impact page is for.
 - It publishes no lineup data either, but it does publish substitutions, so
   lineups are rebuilt by walking them. `--validate` checks the rebuilt minutes
   against the box score: they land within a minute for 99.5% of NBA

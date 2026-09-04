@@ -4,12 +4,14 @@ import { ViewTabs } from "@/components/ui/ViewTabs";
 import { TeamCompare } from "./TeamCompare";
 import { Teams } from "./Teams";
 import { Lineups } from "./Lineups";
+import { WithOrWithout } from "./WithOrWithout";
 import { TeamRankings } from "./TeamRankings";
 
 const VIEWS = [
   { v: "league", label: "League table" },
   { v: "team", label: "Team profile" },
   { v: "lineups", label: "Lineups" },
+  { v: "wowy", label: "With or without" },
   { v: "leaders", label: "All-time leaders" },
 ] as const;
 
@@ -30,6 +32,7 @@ export function TeamsSection({ meta, view }: { meta: Meta; view?: string }) {
       {active === "league" && <TeamCompare meta={meta} />}
       {active === "team" && <Teams meta={meta} />}
       {active === "lineups" && <Lineups meta={meta} />}
+      {active === "wowy" && <WithOrWithout meta={meta} />}
       {active === "leaders" && <TeamRankings meta={meta} />}
     </div>
   );

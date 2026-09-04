@@ -37,6 +37,16 @@ RATE_BASES = {
 # The possession bases and what each scales to.
 POSSESSION_BASES = {"per75": 75.0, "per100": 100.0}
 
+# Which games an impact rating was fit on. A postseason is its own sample, not
+# a continuation of the season, so the two are never pooled.
+RATING_SEASON_TYPES = {"regular": "Regular season", "playoffs": "Playoffs"}
+
+# The impact columns a page can rank on, in the order they nest: the parts,
+# then each side's total, then the whole.
+RATING_PARTS = ["field_goals", "free_throws", "second_chance", "turnovers"]
+RATING_COLUMNS = ([f"{side}_{part}" for side in ("off", "def") for part in RATING_PARTS]
+                  + ["off_rating", "def_rating", "rapm", "on_off"])
+
 
 def _load(stem: str, league: League) -> pd.DataFrame:
     """Load `<stem><suffix>.parquet`, falling back to the pre-league
@@ -156,13 +166,30 @@ def ratings(league: League = DEFAULT) -> pd.DataFrame | None:
     return _with_season_str(df) if df is not None else None
 
 
-@lru_cache(maxsize=8)
-def rating_seasons(league: League = DEFAULT) -> list[str]:
-    """Seasons with impact ratings, newest last."""
+@lru_cache(maxsize=16)
+def rating_seasons(league: League = DEFAULT, season_type: str = "regular") -> list[str]:
+    """Seasons with impact ratings of this kind, newest last.
+
+    The playoff list is shorter: a postseason too small to regress anything out
+    is skipped by the ETL rather than fit to noise.
+    """
     df = ratings(league)
     if df is None or df.empty:
         return []
+    if "season_type" in df.columns:
+        df = df[df["season_type"] == season_type]
+    elif season_type != "regular":
+        return []
     return sorted(df["season"].unique().tolist())
+
+
+@lru_cache(maxsize=8)
+def wowy(league: League = DEFAULT) -> pd.DataFrame | None:
+    """What a team did with each player and pair on the floor, or None if
+    `etl/lineup_etl.py` hasn't run. Built from every stint, so it covers a
+    team's whole season rather than the lineups long enough to store."""
+    df = _load_optional("wowy", league)
+    return _with_season_str(df) if df is not None else None
 
 
 @lru_cache(maxsize=8)

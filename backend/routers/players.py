@@ -189,31 +189,56 @@ def player_search(q: str = "", limit: int = 12, league: str | None = None):
 
 @router.get("/players/ratings")
 def player_ratings(season: str, league: str | None = None, team: str | None = None,
-                   min_poss: float = 500, limit: int = 100):
+                   season_type: str = "regular", min_share: float = 0.55,
+                   limit: int = 250):
     """Impact ratings for one season, best first.
 
-    RAPM is the margin per 100 possessions a player is responsible for once the
-    other nine on the floor are regressed out — see `etl/lineup_etl.py`. The raw
-    on-court and on-off numbers come back beside it, since the gap between what
-    happened while a player was out there and what he is credited with is the
-    point of the adjustment.
+    Each player's number is the points per 100 possessions he is responsible for
+    once the other nine on the floor are regressed out, split into the offensive
+    and defensive halves and the possession outcomes underneath them — see
+    `etl/lineup_etl.py`.
+
+    The floor is a share of his team's possessions rather than a count of them,
+    because a count means different things in different leagues and in a
+    postseason. It matters more than a floor usually does: a rating over a
+    fraction of a season is a real estimate with real uncertainty, and part-time
+    players whose stints happened to go well are exactly who floats to the top
+    of a leaderboard that lets them in. Percentiles are against everyone who
+    clears the same bar, so they move with it.
     """
     lg = leagues.get(league)
     df = data.ratings(lg)
     if df is None:
         raise HTTPException(404, f"No {lg.label} rating data. "
                                  f"Run `python etl/lineup_etl.py --league {lg.key}`.")
-    sub = df[df["season"] == str(season)]
+    if season_type not in data.RATING_SEASON_TYPES:
+        raise HTTPException(400, f"Unknown season type {season_type!r}. Expected one "
+                                 f"of: {', '.join(data.RATING_SEASON_TYPES)}")
+    sub = df[(df["season"] == str(season)) & (df["season_type"] == season_type)].copy()
     if sub.empty:
-        raise HTTPException(404, f"No {lg.label} ratings for {season}. Seasons on disk: "
-                                 f"{', '.join(data.rating_seasons(lg)) or 'none'}")
+        raise HTTPException(
+            404, f"No {lg.label} {season_type} ratings for {season}. Seasons on disk: "
+                 f"{', '.join(data.rating_seasons(lg, season_type)) or 'none'}")
+
+    # Five players are on the floor for each of a team's possessions, so its
+    # players' possessions sum to five times the team's own.
+    poss = pd.to_numeric(sub["poss"], errors="coerce").fillna(0)
+    team_poss = sub.assign(poss=poss).groupby("team_id")["poss"].transform("sum") / 5
+    sub["share"] = (poss / team_poss.where(team_poss > 0)).round(4)
     if team:
         sub = sub[sub["team_name"] == team]
-    qualified = sub[pd.to_numeric(sub["poss"], errors="coerce").fillna(0) >= float(min_poss)]
+
+    qualified = sub[sub["share"].fillna(0) >= float(min_share)].copy()
+    for col in data.RATING_COLUMNS:
+        if col in qualified.columns:
+            qualified[f"pct_{col}"] = (
+                pd.to_numeric(qualified[col], errors="coerce").rank(pct=True) * 100
+            ).round(0)
     ordered = qualified.sort_values("rapm", ascending=False).head(limit)
     return analytics.json_safe({
         "season": str(season), "league": lg.key, "team": team,
-        "min_poss": float(min_poss),
+        "season_type": season_type,
+        "min_share": float(min_share),
         "qualified": int(len(qualified)),
         "pool": int(len(sub)),
         "rows": data.records(ordered),

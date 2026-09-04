@@ -16,7 +16,8 @@ minutes against the box score and prints the error.
 
 Outputs two files per league. `data/lineup_<league>.parquet` has one row per
 season, team and five-man group, with minutes, possessions and points for and
-against. `data/rating_<league>.parquet` has one row per player-season: the
+against. `data/wowy_<league>.parquet` has what a team did with each player and each pair
+of them on the floor. `data/rating_<league>.parquet` has one row per player-season: the
 margin per 100 possessions the stints say he is responsible for once his
 teammates and opponents are regressed out (RAPM), beside the raw on-court and
 on-off numbers it adjusts.
@@ -36,6 +37,7 @@ import sys
 from collections import defaultdict
 from pathlib import Path
 
+import numpy as np
 import pandas as pd
 import requests
 
@@ -53,7 +55,14 @@ REPOS = {
 }
 
 REGULAR_SEASON = 2
+POSTSEASON = 3
+SEASON_TYPES = {REGULAR_SEASON: "regular", POSTSEASON: "playoffs"}
 MIN_TEAM_GAMES = 10  # drops All-Star squads, as in sdv_etl
+
+# A postseason is 80-odd games against a regular season's 1,200, and every
+# player has two coefficients to fit. Below this there is not enough play to
+# regress anything out and the answer would be the prior, not the season.
+MIN_PLAYOFF_STINTS = 800
 
 # ESPN's older substitution logs are too thin to close a lineup with — about 37
 # a game in 2004 against 57 today — and a missing sub is a five that never
@@ -143,25 +152,33 @@ def _fix_to_five(on: set, period: pd.DataFrame, team: float,
     return on
 
 
-def _poss_counts(r) -> tuple[int, int, int, int]:
-    """(fga, fta, oreb, tov) contributed by one play, for the team that owns it.
+# What one play contributes, in the order the stint tally keeps them.
+TALLY = ["fga", "fta", "oreb", "tov", "fg_pts", "ft_pts"]
+
+
+def _poss_counts(r) -> tuple[int, int, int, int, int, int]:
+    """What one play contributes, for the team that owns it.
 
     Tuned against the team box scores: over the 2025 NBA season these rules
     reproduce field goal and free throw attempts exactly and rebounds to within
     one, and overcount turnovers by 1%. The rebound rule needs the athlete
     check — ESPN logs a ball out of bounds off a block as an offensive rebound
     by nobody, and the box score doesn't count those.
+
+    Points are split by where they came from, since the free throw line and the
+    field are separate skills and the impact model prices them separately.
     """
     tt = r.type_text or ""
+    made = int(r.score_value) if (r.scoring_play and not pd.isna(r.score_value)) else 0
     if tt.startswith("Free Throw"):
-        return 0, 1, 0, 0
+        return 0, 1, 0, 0, 0, made
     if "Turnover" in tt and tt != "No Turnover":
-        return 0, 0, 0, 1
+        return 0, 0, 0, 1, 0, 0
     if tt == "Offensive Rebound" and not pd.isna(r.athlete_id_1):
-        return 0, 0, 1, 0
+        return 0, 0, 1, 0, 0, 0
     if r.shooting_play:
-        return 1, 0, 0, 0
-    return 0, 0, 0, 0
+        return 1, 0, 0, 0, made, 0
+    return 0, 0, 0, 0, 0, 0
 
 
 def stints(pbp: pd.DataFrame, box: pd.DataFrame) -> tuple[pd.DataFrame, dict]:
@@ -200,7 +217,7 @@ def stints(pbp: pd.DataFrame, box: pd.DataFrame) -> tuple[pd.DataFrame, dict]:
 
             clock = period["start_quarter_seconds_remaining"].iloc[0]
             score = {home: period["home_score"].iloc[0], away: period["away_score"].iloc[0]}
-            tally = {home: [0, 0, 0, 0], away: [0, 0, 0, 0]}  # fga, fta, oreb, tov
+            tally = {home: [0] * len(TALLY), away: [0] * len(TALLY)}
             # When the floor has to be corrected, the player who hasn't touched
             # the game in longest is the likeliest mistake. Inferred names that
             # never appear in a play sort first, which is the point.
@@ -222,7 +239,7 @@ def stints(pbp: pd.DataFrame, box: pd.DataFrame) -> tuple[pd.DataFrame, dict]:
                             played_seconds[(gid, player)] += length
                 clock = at
                 score = {home: home_pts, away: away_pts}
-                tally = {home: [0, 0, 0, 0], away: [0, 0, 0, 0]}
+                tally = {home: [0] * len(TALLY), away: [0] * len(TALLY)}
 
             for i, r in enumerate(period.itertuples()):
                 if not pd.isna(r.athlete_id_1):
@@ -246,10 +263,9 @@ def stints(pbp: pd.DataFrame, box: pd.DataFrame) -> tuple[pd.DataFrame, dict]:
             close(0.0, period["home_score"].iloc[-1], period["away_score"].iloc[-1])
             ended_previous = {t: set(v) for t, v in floor.items()}
 
-    cols = ["game_id", "home_id", "away_id", "home_five", "away_five", "seconds",
-            "home_pts", "away_pts",
-            "home_fga", "home_fta", "home_oreb", "home_tov",
-            "away_fga", "away_fta", "away_oreb", "away_tov"]
+    cols = (["game_id", "home_id", "away_id", "home_five", "away_five", "seconds",
+             "home_pts", "away_pts"]
+            + [f"home_{c}" for c in TALLY] + [f"away_{c}" for c in TALLY])
     return pd.DataFrame(rows, columns=cols), played_seconds
 
 
@@ -310,61 +326,186 @@ def build_lineups(st: pd.DataFrame, box: pd.DataFrame, season: int) -> pd.DataFr
     return out.sort_values("min", ascending=False).reset_index(drop=True)
 
 
-def build_ratings(st: pd.DataFrame, box: pd.DataFrame, season: int) -> pd.DataFrame:
-    """One overall impact number per player, from the stints they played in.
+# The pieces a possession's value breaks into. With `shots` = FGA + 0.44*FTA, a
+# possession is a shot unless it was turned over or repeated after an offensive
+# rebound, so points/poss = e * (1 + OREB/poss - TOV/poss) where e = points per
+# shot. Splitting that against the league's own rates isolates one skill each:
+#
+#   shot value   (e - e_lg) * (1 + OREB/poss - TOV/poss)   how well he scores
+#   rebounding    e_lg * (OREB/poss - oreb_lg)             how often he keeps it
+#   turnovers    -e_lg * (TOV/poss  - tov_lg)              how rarely he loses it
+#
+# The three add back to points per 100 possessions short of a constant, which
+# the intercept absorbs, so the fitted coefficients still sum to the whole.
+# Pricing the last two at the league's efficiency rather than the stint's own is
+# what keeps shooting out of them — otherwise a good shooter's efficiency leaks
+# into his turnover and rebounding numbers.
+VALUE_PARTS = ["field_goals", "free_throws", "second_chance", "turnovers"]
+
+# How hard the fit is pulled toward zero: a prior on how far from average a
+# player can be. It is fixed per league rather than re-chosen each season —
+# cross-validating it per season optimises the prediction of individual stints,
+# which is mostly noise, and leaves every season on a scale of its own that
+# cannot be compared to the next. Being fixed, it also handles sample size on
+# its own: a postseason carries a fraction of a season's possessions, so the
+# same penalty pulls it much harder toward average, which is what a few hundred
+# possessions deserve.
+#
+# The NBA needs a heavier hand than the WNBA. It plays five times the
+# possessions, so the same penalty constrains it far less, and at the WNBA's
+# setting role players on lucky stints float above the stars — Korver over
+# Curry in 2015, Covington over everyone in 2018. Seasons stay comparable
+# within a league, which is what matters; the two leagues never play each
+# other, so a number from one was never comparable to the other anyway.
+RIDGE_ALPHA = {"nba": 4000.0, "wnba": 1000.0}
+
+
+def _league_rates(stints: pd.DataFrame) -> dict:
+    """The season's own averages, which the pieces are measured against."""
+    totals = {c: float(stints[f"home_{c}"].sum() + stints[f"away_{c}"].sum())
+              for c in TALLY}
+    shots = totals["fga"] + 0.44 * totals["fta"]
+    poss = shots - totals["oreb"] + totals["tov"]
+    return {
+        "per_shot": (totals["fg_pts"] + totals["ft_pts"]) / shots if shots else 0.0,
+        "fg_per_shot": totals["fg_pts"] / shots if shots else 0.0,
+        "ft_per_shot": totals["ft_pts"] / shots if shots else 0.0,
+        "oreb_rate": totals["oreb"] / poss if poss else 0.0,
+        "tov_rate": totals["tov"] / poss if poss else 0.0,
+    }
+
+
+def _value_parts(pts_fg, pts_ft, fga, fta, oreb, tov, rates: dict):
+    """Split points per 100 possessions into its four additive pieces."""
+    # The side's own possessions, not the averaged count the lineup table uses:
+    # the identity is between a team's shots and its own trips.
+    shots = fga + 0.44 * fta
+    poss = shots - oreb + tov
+    live = shots > 0
+    alive = poss > 0
+    per = lambda x: np.divide(x, shots, out=np.zeros_like(shots), where=live)
+    rate = lambda x: np.divide(x, poss, out=np.zeros_like(poss), where=alive)
+    # Shots kept per possession: the multiplier a point of efficiency earns.
+    kept = np.where(alive, 1.0 + rate(oreb) - rate(tov), 0.0)
+    return {
+        "field_goals": 100.0 * (per(pts_fg) - rates["fg_per_shot"]) * kept,
+        "free_throws": 100.0 * (per(pts_ft) - rates["ft_per_shot"]) * kept,
+        "second_chance": 100.0 * rates["per_shot"] * (rate(oreb) - rates["oreb_rate"]),
+        "turnovers": -100.0 * rates["per_shot"] * (rate(tov) - rates["tov_rate"]),
+    }
+
+
+def _check_parts(parts: dict, pts_fg, pts_ft, fga, fta, oreb, tov) -> None:
+    """The pieces rebuild points per 100 up to one constant, which the intercept
+    absorbs. A drifting gap would mean the split has stopped being an identity,
+    so the spread of the difference is what has to be zero — not the difference.
+    """
+    poss = fga + 0.44 * fta - oreb + tov
+    live = poss > 0
+    gap = (sum(parts.values())[live]
+           - 100.0 * ((pts_fg + pts_ft)[live] / poss[live]))
+    spread = float(np.max(gap) - np.min(gap)) if live.any() else 0.0
+    if spread > 1e-6:
+        raise AssertionError(
+            f"value parts do not reconstruct points per 100: gap varies by {spread}")
+
+
+def build_ratings(st: pd.DataFrame, box: pd.DataFrame, season: int,
+                  league: League) -> pd.DataFrame:
+    """Offensive and defensive impact per player, broken into what caused it.
 
     Raw plus-minus answers "what happened while he was out there", which is as
-    much a statement about his teammates and opponents as about him. Regressing
-    the point differential of every stint on the ten players standing in it
-    separates those: each player gets the margin per 100 possessions he is
-    responsible for, holding the other nine constant. That is RAPM, and the
-    "regularized" half matters — a thousand players over 37,000 stints is an
-    underdetermined problem, so the fit is ridged toward zero and a player with
-    few possessions is pulled back to average rather than handed a wild number.
+    much a statement about his teammates and opponents as about him. The fix is
+    to regress it: every possession has five players trying to score and five
+    trying to stop them, so each of the ten gets credit for the outcome with the
+    other nine held constant.
 
-    The ridge strength is chosen by cross-validation rather than fixed, since
-    the right amount of shrinkage depends on how many stints a season has.
+    Each stint therefore becomes two observations, one per direction of play.
+    The scoring team's five enter with a +1 in their offensive column and the
+    defending five with a -1 in their defensive column. The signs mean both
+    halves read the same way: positive is good, whether it came from scoring
+    more or allowing less, and a player's total is the two added together.
 
-    Raw on-court and on-off numbers come back alongside it, unadjusted, because
-    the gap between them and the fitted number is the useful part.
+    The target is not one number but four — the pieces of VALUE_PARTS, which sum
+    to points per 100 possessions. One penalty, chosen by cross-validating the
+    total, is used for all of them, which is what makes the parts add up to the
+    whole exactly rather than approximately.
+
+    That leaves ten coefficients per player over a few hundred players, so the
+    fit is ridged toward zero: a player with few possessions lands near average
+    rather than at an extreme.
+
+    Raw on-court and on-off numbers come back alongside, unadjusted, because the
+    gap between them and the fitted number is the useful part.
     """
     from scipy import sparse                     # ETL-only dependency
-    from sklearn.linear_model import RidgeCV
+    from sklearn.linear_model import Ridge
 
     stints = st.copy()
     # Same possession estimate the lineup table uses: Oliver's count from each
     # side, averaged, since both teams take the same trips down the floor.
-    home = (stints["home_fga"] + 0.44 * stints["home_fta"]
-            - stints["home_oreb"] + stints["home_tov"])
-    away = (stints["away_fga"] + 0.44 * stints["away_fta"]
-            - stints["away_oreb"] + stints["away_tov"])
-    stints["poss"] = 0.5 * (home + away)
+    home_poss = (stints["home_fga"] + 0.44 * stints["home_fta"]
+                 - stints["home_oreb"] + stints["home_tov"])
+    away_poss = (stints["away_fga"] + 0.44 * stints["away_fta"]
+                 - stints["away_oreb"] + stints["away_tov"])
+    stints["poss"] = 0.5 * (home_poss + away_poss)
     stints = stints[stints["poss"] > 0].reset_index(drop=True)
     if stints.empty:
         return pd.DataFrame()
 
     players = sorted({p for five in stints["home_five"] for p in five}
                      | {p for five in stints["away_five"] for p in five})
-    index = {p: i for i, p in enumerate(players)}
+    # Two columns per player, plus one for home court so the advantage is not
+    # charged to whoever happened to be playing at home.
+    offense = {p: i for i, p in enumerate(players)}
+    defense = {p: i + len(players) for i, p in enumerate(players)}
+    home_column = 2 * len(players)
 
-    rows, cols, vals = [], [], []
-    for i, (home, away) in enumerate(zip(stints["home_five"], stints["away_five"])):
-        for p in home:
-            rows.append(i); cols.append(index[p]); vals.append(1.0)
-        for p in away:
-            rows.append(i); cols.append(index[p]); vals.append(-1.0)
+    rows, cols, vals, weight = [], [], [], []
+    order: list[tuple] = []          # (attacking side, row index)
+    for i, r in enumerate(stints.itertuples()):
+        for side, attacking, defending, at_home in (
+            ("home", r.home_five, r.away_five, 1.0),
+            ("away", r.away_five, r.home_five, 0.0),
+        ):
+            row = len(weight)
+            for p in attacking:
+                rows.append(row); cols.append(offense[p]); vals.append(1.0)
+            for p in defending:
+                rows.append(row); cols.append(defense[p]); vals.append(-1.0)
+            if at_home:
+                rows.append(row); cols.append(home_column); vals.append(1.0)
+            # Weighted by the possessions behind them: a 6-point stint over 3
+            # possessions is not a season of evidence.
+            weight.append(stints["poss"].iloc[i])
+            order.append((side, i))
+
     design = sparse.csr_matrix((vals, (rows, cols)),
-                               shape=(len(stints), len(players)))
+                               shape=(len(weight), 2 * len(players) + 1))
+    weight = np.asarray(weight, dtype=float)
 
+    # Each observation's four pieces, taken from whichever side was attacking.
     poss = stints["poss"].to_numpy(dtype=float)
-    margin = (stints["home_pts"] - stints["away_pts"]).to_numpy(dtype=float)
-    # Per 100 possessions, weighted by the possessions behind it: a 12-point
-    # stint over 4 possessions should not outweigh a season of evidence.
-    target = margin / poss * 100.0
+    sides = np.array([s for s, _ in order])
+    idx = np.array([i for _, i in order])
+    pick = lambda col: np.where(sides == "home",
+                                stints[f"home_{col}"].to_numpy(dtype=float)[idx],
+                                stints[f"away_{col}"].to_numpy(dtype=float)[idx])
+    side_stats = {c: pick(c) for c in TALLY}
+    rates = _league_rates(stints)
+    parts = _value_parts(pts_fg=side_stats["fg_pts"], pts_ft=side_stats["ft_pts"],
+                         fga=side_stats["fga"], fta=side_stats["fta"],
+                         oreb=side_stats["oreb"], tov=side_stats["tov"], rates=rates)
+    _check_parts(parts, side_stats["fg_pts"], side_stats["ft_pts"],
+                 side_stats["fga"], side_stats["fta"],
+                 side_stats["oreb"], side_stats["tov"])
+    targets = np.column_stack([parts[k] for k in VALUE_PARTS])
 
-    model = RidgeCV(alphas=[500.0, 1000.0, 2000.0, 4000.0, 8000.0, 16000.0])
-    model.fit(design, target, sample_weight=poss)
-    rapm = dict(zip(players, model.coef_))
+    # One penalty for every piece: a different alpha per target would fit four
+    # unrelated models whose coefficients no longer add to the whole.
+    model = Ridge(alpha=RIDGE_ALPHA[league.key])
+    model.fit(design, targets, sample_weight=weight)
+    coef = {part: model.coef_[i] for i, part in enumerate(VALUE_PARTS)}
 
     # Raw on-court and off-court totals, per player and per team.
     on: dict = defaultdict(lambda: [0.0, 0.0, 0.0, 0.0])   # poss, pf, pa, seconds
@@ -410,15 +551,93 @@ def build_ratings(st: pd.DataFrame, box: pd.DataFrame, season: int) -> pd.DataFr
             "games": int(games.get(int(p), 0)),
             "min": round(p_secs / 60, 1),
             "poss": round(p_poss, 1),
-            "rapm": round(float(rapm[p]), 2),
+            **{f"off_{part}": round(float(coef[part][offense[p]]), 3)
+               for part in VALUE_PARTS},
+            **{f"def_{part}": round(float(coef[part][defense[p]]), 3)
+               for part in VALUE_PARTS},
+            "off_rating": round(float(sum(coef[k][offense[p]] for k in VALUE_PARTS)), 2),
+            "def_rating": round(float(sum(coef[k][defense[p]] for k in VALUE_PARTS)), 2),
+            "rapm": round(float(sum(coef[k][offense[p]] + coef[k][defense[p]]
+                                    for k in VALUE_PARTS)), 2),
             "on_net": None if on_net is None else round(on_net, 1),
             "off_net": None if off_net is None else round(off_net, 1),
             "on_off": None if on_net is None or off_net is None else round(on_net - off_net, 1),
             "plus_minus": int(p_pf - p_pa),
         })
     frame = pd.DataFrame(out)
-    print(f"    ratings: {len(frame)} players, ridge alpha {model.alpha_:.0f}")
+    print(f"    ratings: {len(frame)} players, "
+          f"home court {sum(coef[k][home_column] for k in VALUE_PARTS):+.2f}")
     return frame.sort_values("rapm", ascending=False).reset_index(drop=True)
+
+
+# A pair has to share this much floor time to be worth storing. Below it the
+# "together" split is a handful of possessions and says nothing.
+MIN_PAIR_SECONDS = 120.0
+
+# The row that carries a team's own totals, so "neither player on" can be
+# recovered by inclusion-exclusion without storing a fourth combination.
+TEAM_TOTAL_ID = 0
+
+
+def build_wowy(st: pd.DataFrame, box: pd.DataFrame, season: int) -> pd.DataFrame:
+    """What a team did with each player, and each pair of players, on the floor.
+
+    Stored as totals rather than the four with/without combinations, because
+    three of them are implied: a team's time with A but not B is its time with A
+    minus its time with both, and its time with neither is the team total less
+    each of them plus the overlap. So one row per pair, one per player (a pair
+    with himself) and one for the team is enough to rebuild the whole square.
+
+    This is built from every stint rather than from the lineup table, which
+    keeps only fives that played five minutes together. Those short-lived fives
+    are disproportionately bench units — exactly the minutes the "without" half
+    of the comparison is made of — so leaving them out would bias the one thing
+    the page exists to show.
+    """
+    totals: dict = defaultdict(lambda: [0.0, 0.0, 0.0, 0.0])  # secs, poss, pf, pa
+
+    home_poss = (st["home_fga"] + 0.44 * st["home_fta"]
+                 - st["home_oreb"] + st["home_tov"])
+    away_poss = (st["away_fga"] + 0.44 * st["away_fta"]
+                 - st["away_oreb"] + st["away_tov"])
+    poss = (0.5 * (home_poss + away_poss)).to_numpy(dtype=float)
+
+    for i, r in enumerate(st.itertuples()):
+        for five, team, pf, pa in ((r.home_five, r.home_id, r.home_pts, r.away_pts),
+                                   (r.away_five, r.away_id, r.away_pts, r.home_pts)):
+            for slot in (totals[(team, TEAM_TOTAL_ID, TEAM_TOTAL_ID)],):
+                slot[0] += r.seconds; slot[1] += poss[i]; slot[2] += pf; slot[3] += pa
+            group = sorted(five)
+            for a_i, a in enumerate(group):
+                for b in group[a_i:]:          # includes (a, a): the player alone
+                    slot = totals[(team, a, b)]
+                    slot[0] += r.seconds; slot[1] += poss[i]
+                    slot[2] += pf; slot[3] += pa
+
+    names = dict(zip(box["athlete_id"].astype(float), box["athlete_display_name"]))
+    teams = (box.drop_duplicates("team_id")
+                .set_index("team_id")[["team_display_name", "team_abbreviation"]])
+    rows = []
+    for (team, a, b), (secs, p, pf, pa) in totals.items():
+        # Team and single-player rows are always kept; a pair has to clear the
+        # floor, or a team carries a hundred rows of noise.
+        if a != b and a != TEAM_TOTAL_ID and secs < MIN_PAIR_SECONDS:
+            continue
+        rows.append({
+            "season": str(season),
+            "team_id": int(team),
+            "team_name": teams["team_display_name"].get(team),
+            "team_abbr": teams["team_abbreviation"].get(team),
+            "player_a": int(a),
+            "player_b": int(b),
+            "name_a": names.get(a) if a else None,
+            "name_b": names.get(b) if b else None,
+            "min": round(secs / 60, 1),
+            "poss": round(p, 1),
+            "pts_for": int(pf),
+            "pts_against": int(pa),
+        })
+    return pd.DataFrame(rows)
 
 
 def validate(played_seconds: dict, box: pd.DataFrame) -> None:
@@ -448,36 +667,66 @@ def parse_seasons(spec: str | None, league: League) -> list[int]:
     return [int(spec)]
 
 
+def _of_season_type(pbp: pd.DataFrame, box: pd.DataFrame, code: int
+                    ) -> tuple[pd.DataFrame, pd.DataFrame]:
+    """One season type's plays and box rows, ready to be cut into stints."""
+    p = pbp[pbp["season_type"] == code]
+    b = box[(box["season_type"] == code)
+            & (~box["did_not_play"].fillna(False))
+            & (box["athlete_id"].notna())].copy()
+    if p.empty:
+        return p, b
+    # The All-Star filter counts games per team, which a postseason fails by
+    # design — a team swept in the first round plays four. Every playoff game
+    # is between real franchises anyway, so it only applies to the season.
+    if code == REGULAR_SEASON:
+        keep = real_games(p)
+        p = p[p["game_id"].isin(keep)]
+        b = b[b["game_id"].isin(keep)]
+    return p.sort_values(["game_id", "period_number", "game_play_number"]), b
+
+
 def season_lineups(league: League, season: int, check: bool
-                   ) -> tuple[pd.DataFrame, pd.DataFrame] | None:
-    """Rebuild one season, returning its lineups and its player ratings."""
+                   ) -> tuple[pd.DataFrame, pd.DataFrame, pd.DataFrame] | None:
+    """Rebuild one season, returning its lineups and its player ratings.
+
+    Lineups are the regular season only — a five that played three playoff
+    games is a footnote, not a rotation. Ratings are built for both, so a
+    postseason can be read on its own terms.
+    """
     pbp = fetch(league, "pbp", "play_by_play", season)
     box = fetch(league, "player_box", "player_box", season)
     if pbp is None or box is None:
         print(f"  {season}: not published")
         return None
 
-    pbp = pbp[pbp["season_type"] == REGULAR_SEASON]
-    box = box[(box["season_type"] == REGULAR_SEASON)
-              & (~box["did_not_play"].fillna(False))
-              & (box["athlete_id"].notna())].copy()
-    if pbp.empty:
+    regular_pbp, regular_box = _of_season_type(pbp, box, REGULAR_SEASON)
+    if regular_pbp.empty:
         print(f"  {season}: no regular-season play-by-play")
         return None
 
-    keep = real_games(pbp)
-    pbp = pbp[pbp["game_id"].isin(keep)]
-    box = box[box["game_id"].isin(keep)]
-    pbp = pbp.sort_values(["game_id", "period_number", "game_play_number"])
-
-    st, played_seconds = stints(pbp, box)
-    lineups = build_lineups(st, box, season)
-    print(f"  {season}: {pbp['game_id'].nunique():>4} games, {len(st):>6} stints, "
+    st, played_seconds = stints(regular_pbp, regular_box)
+    lineups = build_lineups(st, regular_box, season)
+    print(f"  {season}: {regular_pbp['game_id'].nunique():>4} games, {len(st):>6} stints, "
           f"{len(lineups):>5} lineups")
-    ratings = build_ratings(st, box, season)
+    rated = [build_ratings(st, regular_box, season, league).assign(season_type="regular")]
+    wowy = build_wowy(st, regular_box, season)
     if check:
-        validate(played_seconds, box)
-    return lineups, ratings
+        validate(played_seconds, regular_box)
+
+    playoff_pbp, playoff_box = _of_season_type(pbp, box, POSTSEASON)
+    if not playoff_pbp.empty:
+        post, _ = stints(playoff_pbp, playoff_box)
+        if len(post) >= MIN_PLAYOFF_STINTS:
+            print(f"        playoffs: {playoff_pbp['game_id'].nunique():>3} games, "
+                  f"{len(post):>5} stints")
+            rated.append(build_ratings(post, playoff_box, season, league)
+                         .assign(season_type="playoffs"))
+        else:
+            print(f"        playoffs: only {len(post)} stints, too few to fit")
+
+    return (lineups, pd.concat([r for r in rated if not r.empty], ignore_index=True),
+            wowy)
 
 
 def main(argv=None) -> None:
@@ -505,7 +754,11 @@ def main(argv=None) -> None:
                  f"lineup{league.suffix}", ["season", "team_name", "min"],
                  [True, True, False])
     write_merged(pd.concat([b[1] for b in built], ignore_index=True),
-                 f"rating{league.suffix}", ["season", "rapm"], [True, False])
+                 f"rating{league.suffix}", ["season", "season_type", "rapm"],
+                 [True, True, False])
+    write_merged(pd.concat([b[2] for b in built], ignore_index=True),
+                 f"wowy{league.suffix}", ["season", "team_abbr", "min"],
+                 [True, True, False])
 
 
 def write_merged(out: pd.DataFrame, stem: str, sort_by: list[str],

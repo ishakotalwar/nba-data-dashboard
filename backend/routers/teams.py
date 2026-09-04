@@ -196,6 +196,101 @@ def team_lineups(season: str, team: str | None = None, league: str | None = None
     })
 
 
+# The row carrying a team's own totals, written by etl/lineup_etl.py.
+TEAM_TOTAL_ID = 0
+
+
+def _split(name: str, row: dict) -> dict:
+    """One cell of the with/without square, as rates."""
+    poss = row["poss"]
+    net = (100 * (row["pts_for"] - row["pts_against"]) / poss) if poss > 0 else None
+    return {
+        "label": name,
+        "min": round(row["min"], 1),
+        "poss": round(poss, 1),
+        "pts_for": int(row["pts_for"]),
+        "pts_against": int(row["pts_against"]),
+        "ortg": round(100 * row["pts_for"] / poss, 1) if poss > 0 else None,
+        "drtg": round(100 * row["pts_against"] / poss, 1) if poss > 0 else None,
+        "net": None if net is None else round(net, 1),
+    }
+
+
+def _combine(*parts) -> dict:
+    """Add and subtract stored totals: (totals, sign) pairs."""
+    out = {k: 0.0 for k in ("min", "poss", "pts_for", "pts_against")}
+    for row, sign in parts:
+        for k in out:
+            out[k] += sign * (row[k] if row else 0.0)
+    return out
+
+
+@router.get("/wowy")
+def team_wowy(season: str, team: str, league: str | None = None,
+              player_a: int | None = None, player_b: int | None = None):
+    """How a team played with and without one player, or a pair of them.
+
+    Raw on-off, deliberately: no opponent or teammate adjustment, so it answers
+    "what happened when he sat" rather than "how good is he". The Impact page
+    is where the adjusted version lives. Built from every stint, so the splits
+    add back up to the team's whole season.
+    """
+    lg = leagues.get(league)
+    df = data.wowy(lg)
+    if df is None:
+        raise HTTPException(404, f"No {lg.label} with/without data. "
+                                 f"Run `python etl/lineup_etl.py --league {lg.key}`.")
+    sub = df[(df["season"] == str(season)) & (df["team_name"] == team)]
+    if sub.empty:
+        raise HTTPException(404, f"No {lg.label} {season} data for {team}")
+
+    singles = sub[(sub["player_a"] == sub["player_b"])
+                  & (sub["player_a"] != TEAM_TOTAL_ID)]
+    roster = [{"player_id": int(r.player_a), "name": r.name_a, "min": round(r.min, 1)}
+              for r in singles.sort_values("min", ascending=False).itertuples()]
+    total = sub[sub["player_a"] == TEAM_TOTAL_ID].iloc[0].to_dict()
+
+    def stored(a: int, b: int) -> dict | None:
+        lo, hi = sorted((a, b))
+        hit = sub[(sub["player_a"] == lo) & (sub["player_b"] == hi)]
+        return hit.iloc[0].to_dict() if len(hit) else None
+
+    rows: list[dict] = []
+    if player_a:
+        on_a = stored(player_a, player_a)
+        if on_a is None:
+            raise HTTPException(404, f"Player {player_a} did not play for {team} in {season}")
+        name_a = on_a["name_a"]
+        if player_b:
+            on_b = stored(player_b, player_b)
+            if on_b is None:
+                raise HTTPException(404, f"Player {player_b} did not play for {team} in {season}")
+            name_b = on_b["name_a"]
+            both = stored(player_a, player_b)
+            if both is None:
+                raise HTTPException(
+                    404, f"{name_a} and {name_b} never shared the floor for long enough")
+            rows = [
+                _split(f"{name_a} + {name_b}", _combine((both, 1))),
+                _split(f"{name_a} without {name_b}", _combine((on_a, 1), (both, -1))),
+                _split(f"{name_b} without {name_a}", _combine((on_b, 1), (both, -1))),
+                # Everything the team played that neither of them was part of.
+                _split("Neither", _combine((total, 1), (on_a, -1), (on_b, -1), (both, 1))),
+            ]
+        else:
+            rows = [
+                _split(f"{name_a} on", _combine((on_a, 1))),
+                _split(f"{name_a} off", _combine((total, 1), (on_a, -1))),
+            ]
+
+    return analytics.json_safe({
+        "season": str(season), "league": lg.key, "team": team,
+        "roster": roster,
+        "team_total": _split(team, total),
+        "rows": rows,
+    })
+
+
 @router.get("/rankings")
 def teams_rankings(metric: str = "net", league: str | None = None,
                    limit: int = 15, min_games: int = 20):
