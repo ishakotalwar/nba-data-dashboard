@@ -122,7 +122,7 @@ export function Wowy({ meta }: { meta: Meta }) {
   if (!seasons.length) {
     return (
       <Card>
-        <CardHeader title="WOWY" />
+        <CardHeader title="With or Without You" />
         <CardBody>
           <div className="text-sm text-mute">
             No {meta.league_label} lineup data on disk. Build it with{" "}
@@ -140,8 +140,7 @@ export function Wowy({ meta }: { meta: Meta }) {
     <div className="space-y-4">
       <Card>
         <CardHeader
-          title="WOWY"
-          subtitle="With or without you: pick players to see every combination of them the team played, and what happened in each."
+          title="With or Without You"
         />
         <CardBody>
           <div className="grid gap-3 md:grid-cols-2">
@@ -169,11 +168,6 @@ export function Wowy({ meta }: { meta: Meta }) {
         <Card>
           <CardHeader
             title="Squad"
-            subtitle={
-              picked.length
-                ? `${picked.length} of ${max} selected — click to add or remove`
-                : `Click up to ${max} players`
-            }
             right={
               picked.length ? (
                 <button className="btn btn-ghost text-sm" onClick={() => setPicked([])}>

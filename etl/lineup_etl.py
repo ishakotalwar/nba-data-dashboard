@@ -411,6 +411,77 @@ def _check_parts(parts: dict, pts_fg, pts_ft, fga, fta, oreb, tov) -> None:
             f"value parts do not reconstruct points per 100: gap varies by {spread}")
 
 
+def _design(stints: pd.DataFrame):
+    """The regression's shape: one row per stint per direction of play.
+
+    Returns the design matrix, the possession weights, the four value pieces as
+    columns, and where each player's offensive and defensive coefficients live.
+    Shared so a refit against a different centre builds exactly the same
+    problem rather than a lookalike.
+    """
+    from scipy import sparse
+
+    stints = stints.copy()
+    # Same possession estimate the lineup table uses: Oliver's count from each
+    # side, averaged, since both teams take the same trips down the floor.
+    home_poss = (stints["home_fga"] + 0.44 * stints["home_fta"]
+                 - stints["home_oreb"] + stints["home_tov"])
+    away_poss = (stints["away_fga"] + 0.44 * stints["away_fta"]
+                 - stints["away_oreb"] + stints["away_tov"])
+    stints["poss"] = 0.5 * (home_poss + away_poss)
+    stints = stints[stints["poss"] > 0].reset_index(drop=True)
+    if stints.empty:
+        return None
+
+    players = sorted({p for five in stints["home_five"] for p in five}
+                     | {p for five in stints["away_five"] for p in five})
+    # Two columns per player, plus one for home court so the advantage is not
+    # charged to whoever happened to be playing at home.
+    offense = {p: i for i, p in enumerate(players)}
+    defense = {p: i + len(players) for i, p in enumerate(players)}
+    home_column = 2 * len(players)
+
+    rows, cols, vals, weight = [], [], [], []
+    order: list[tuple] = []          # (attacking side, row index)
+    for i, r in enumerate(stints.itertuples()):
+        for side, attacking, defending, at_home in (
+            ("home", r.home_five, r.away_five, 1.0),
+            ("away", r.away_five, r.home_five, 0.0),
+        ):
+            row = len(weight)
+            for p in attacking:
+                rows.append(row); cols.append(offense[p]); vals.append(1.0)
+            for p in defending:
+                rows.append(row); cols.append(defense[p]); vals.append(-1.0)
+            if at_home:
+                rows.append(row); cols.append(home_column); vals.append(1.0)
+            # Weighted by the possessions behind them: a 6-point stint over 3
+            # possessions is not a season of evidence.
+            weight.append(stints["poss"].iloc[i])
+            order.append((side, i))
+
+    design = sparse.csr_matrix((vals, (rows, cols)),
+                               shape=(len(weight), 2 * len(players) + 1))
+    weight = np.asarray(weight, dtype=float)
+
+    # Each observation's four pieces, taken from whichever side was attacking.
+    sides = np.array([s for s, _ in order])
+    idx = np.array([i for _, i in order])
+    pick = lambda col: np.where(sides == "home",
+                                stints[f"home_{col}"].to_numpy(dtype=float)[idx],
+                                stints[f"away_{col}"].to_numpy(dtype=float)[idx])
+    side_stats = {c: pick(c) for c in TALLY}
+    rates = _league_rates(stints)
+    parts = _value_parts(pts_fg=side_stats["fg_pts"], pts_ft=side_stats["ft_pts"],
+                         fga=side_stats["fga"], fta=side_stats["fta"],
+                         oreb=side_stats["oreb"], tov=side_stats["tov"], rates=rates)
+    _check_parts(parts, side_stats["fg_pts"], side_stats["ft_pts"],
+                 side_stats["fga"], side_stats["fta"],
+                 side_stats["oreb"], side_stats["tov"])
+    targets = np.column_stack([parts[k] for k in VALUE_PARTS])
+    return design, weight, targets, players, offense, defense, home_column
+
+
 def build_ratings(st: pd.DataFrame, box: pd.DataFrame, season: int,
                   league: League) -> pd.DataFrame:
     """Offensive and defensive impact per player, broken into what caused it.
@@ -450,57 +521,17 @@ def build_ratings(st: pd.DataFrame, box: pd.DataFrame, season: int,
     away_poss = (stints["away_fga"] + 0.44 * stints["away_fta"]
                  - stints["away_oreb"] + stints["away_tov"])
     stints["poss"] = 0.5 * (home_poss + away_poss)
-    stints = stints[stints["poss"] > 0].reset_index(drop=True)
-    if stints.empty:
+    built = _design(stints)
+    if built is None:
         return pd.DataFrame()
-
-    players = sorted({p for five in stints["home_five"] for p in five}
-                     | {p for five in stints["away_five"] for p in five})
-    # Two columns per player, plus one for home court so the advantage is not
-    # charged to whoever happened to be playing at home.
-    offense = {p: i for i, p in enumerate(players)}
-    defense = {p: i + len(players) for i, p in enumerate(players)}
-    home_column = 2 * len(players)
-
-    rows, cols, vals, weight = [], [], [], []
-    order: list[tuple] = []          # (attacking side, row index)
-    for i, r in enumerate(stints.itertuples()):
-        for side, attacking, defending, at_home in (
-            ("home", r.home_five, r.away_five, 1.0),
-            ("away", r.away_five, r.home_five, 0.0),
-        ):
-            row = len(weight)
-            for p in attacking:
-                rows.append(row); cols.append(offense[p]); vals.append(1.0)
-            for p in defending:
-                rows.append(row); cols.append(defense[p]); vals.append(-1.0)
-            if at_home:
-                rows.append(row); cols.append(home_column); vals.append(1.0)
-            # Weighted by the possessions behind them: a 6-point stint over 3
-            # possessions is not a season of evidence.
-            weight.append(stints["poss"].iloc[i])
-            order.append((side, i))
-
-    design = sparse.csr_matrix((vals, (rows, cols)),
-                               shape=(len(weight), 2 * len(players) + 1))
-    weight = np.asarray(weight, dtype=float)
-
-    # Each observation's four pieces, taken from whichever side was attacking.
-    poss = stints["poss"].to_numpy(dtype=float)
-    sides = np.array([s for s, _ in order])
-    idx = np.array([i for _, i in order])
-    pick = lambda col: np.where(sides == "home",
-                                stints[f"home_{col}"].to_numpy(dtype=float)[idx],
-                                stints[f"away_{col}"].to_numpy(dtype=float)[idx])
-    side_stats = {c: pick(c) for c in TALLY}
-    rates = _league_rates(stints)
-    parts = _value_parts(pts_fg=side_stats["fg_pts"], pts_ft=side_stats["ft_pts"],
-                         fga=side_stats["fga"], fta=side_stats["fta"],
-                         oreb=side_stats["oreb"], tov=side_stats["tov"], rates=rates)
-    _check_parts(parts, side_stats["fg_pts"], side_stats["ft_pts"],
-                 side_stats["fga"], side_stats["fta"],
-                 side_stats["oreb"], side_stats["tov"])
-    targets = np.column_stack([parts[k] for k in VALUE_PARTS])
+    design, weight, targets, players, offense, defense, home_column = built
+    stints = stints.copy()
+    home_poss = (stints["home_fga"] + 0.44 * stints["home_fta"]
+                 - stints["home_oreb"] + stints["home_tov"])
+    away_poss = (stints["away_fga"] + 0.44 * stints["away_fta"]
+                 - stints["away_oreb"] + stints["away_tov"])
+    stints["poss"] = 0.5 * (home_poss + away_poss)
+    stints = stints[stints["poss"] > 0].reset_index(drop=True)
 
     # One penalty for every piece: a different alpha per target would fit four
     # unrelated models whose coefficients no longer add to the whole.
@@ -618,7 +649,7 @@ def _of_season_type(pbp: pd.DataFrame, box: pd.DataFrame, code: int
 
 
 def season_lineups(league: League, season: int, check: bool
-                   ) -> tuple[pd.DataFrame, pd.DataFrame] | None:
+                   ) -> tuple[pd.DataFrame, pd.DataFrame, pd.DataFrame, pd.DataFrame] | None:
     """Rebuild one season, returning its lineups and its player ratings.
 
     Lineups are the regular season only — a five that played three playoff
@@ -655,7 +686,8 @@ def season_lineups(league: League, season: int, check: bool
         else:
             print(f"        playoffs: only {len(post)} stints, too few to fit")
 
-    return lineups, pd.concat([r for r in rated if not r.empty], ignore_index=True)
+    return (lineups, pd.concat([r for r in rated if not r.empty], ignore_index=True),
+            st, regular_box)
 
 
 def main(argv=None) -> None:
@@ -674,17 +706,159 @@ def main(argv=None) -> None:
     seasons = parse_seasons(args.seasons, league)
     print(f"[{league.label}] lineups from play-by-play, {seasons[0]}-{seasons[-1]}")
 
-    built = [r for r in (season_lineups(league, yr, args.validate) for yr in seasons)
-             if r is not None]
+    kept: dict = {}
+    built = []
+    for yr in seasons:
+        result = season_lineups(league, yr, args.validate)
+        if result is None:
+            continue
+        lineups, ratings, stints, box = result
+        built.append((lineups, ratings))
+        kept[yr] = (stints, box)
     if not built:
         raise SystemExit(f"No {league.label} play-by-play downloaded.")
+
+    ratings = pd.concat([b[1] for b in built], ignore_index=True)
+    ratings = add_window_ratings(ratings, kept, league)
+    ratings = add_box_prior_ratings(ratings, kept, league)
 
     write_merged(pd.concat([b[0] for b in built], ignore_index=True),
                  f"lineup{league.suffix}", ["season", "team_name", "min"],
                  [True, True, False])
-    write_merged(pd.concat([b[1] for b in built], ignore_index=True),
-                 f"rating{league.suffix}", ["season", "season_type", "rapm"],
-                 [True, True, False])
+    write_merged(ratings, f"rating{league.suffix}",
+                 ["season", "season_type", "rapm"], [True, True, False])
+
+
+# How many seasons a rolling fit pools. One season of stints is a weak estimate
+# — it repeats season to season at about r=0.4 — and three is the window most
+# public work settles on: enough to steady the number, not so much that a
+# player's development is averaged away.
+RAPM_WINDOW = 3
+
+# Box-score rates the prior is built from, per 100 possessions of playing time.
+PRIOR_FEATURES = ["pts", "ast", "reb", "stl", "blk", "tov", "ts_pct", "usg_pct"]
+
+
+def add_window_ratings(ratings: pd.DataFrame, kept: dict, league: League) -> pd.DataFrame:
+    """A rolling multi-season RAPM, beside the single-season one.
+
+    Fitting the same model over a longer window trades currency for stability:
+    the one-season number moves as much with who a player happened to share the
+    floor with as with the player.
+    """
+    seasons = sorted(kept)
+    out = []
+    for i, yr in enumerate(seasons):
+        window = seasons[max(0, i - RAPM_WINDOW + 1):i + 1]
+        stints = pd.concat([kept[w][0] for w in window], ignore_index=True)
+        box = pd.concat([kept[w][1] for w in window], ignore_index=True)
+        fit = build_ratings(stints, box, yr, league)
+        if fit.empty:
+            continue
+        print(f"    {yr} {RAPM_WINDOW}-season window ({window[0]}-{window[-1]}): "
+              f"{len(fit)} players over {len(stints)} stints")
+        out.append(fit[["player_id", "rapm"]].assign(season=str(yr)))
+    if not out:
+        return ratings
+    window_col = pd.concat(out, ignore_index=True).rename(columns={"rapm": "rapm_window"})
+    # Only the regular season has a window; a postseason keeps its own number.
+    return ratings.merge(window_col, on=["season", "player_id"], how="left")
+
+
+def add_box_prior_ratings(ratings: pd.DataFrame, kept: dict, league: League
+                          ) -> pd.DataFrame:
+    """RAPM refit against a box-score prior instead of against zero.
+
+    Plain ridge pulls a thinly-played player toward average, which is the right
+    instinct but the wrong target: the box score already says something about
+    him. Fitting a model from box-score rates to the plain RAPM gives a per
+    player expectation, and refitting with that as the centre keeps the stints
+    as evidence while starting each player somewhere defensible.
+
+    Ridge around a prior needs no new solver: with beta = mu + b, minimising
+    ||y - X(mu + b)||^2 + lambda||b||^2 is the ordinary problem on the residual
+    y - X*mu, so the prior is subtracted out, fit as usual, and added back.
+    """
+    from scipy import sparse
+    from sklearn.linear_model import Ridge
+
+    box = _load_optional_players(league)
+    if box is None:
+        print("  no player table on disk — skipping the box-score prior")
+        return ratings
+
+    plain = ratings[ratings["season_type"] == "regular"]
+    frame = plain.merge(box, on=["season", "player_id"], how="inner")
+    frame = frame[frame["poss"] >= 1000].dropna(subset=PRIOR_FEATURES + ["rapm"])
+    if len(frame) < 200:
+        print("  too few player-seasons to fit a prior — skipping")
+        return ratings
+
+    # What the box score says impact should be, learned from the plain fit.
+    model = Ridge(alpha=1.0)
+    model.fit(frame[PRIOR_FEATURES].to_numpy(dtype=float),
+              frame["rapm"].to_numpy(dtype=float))
+    fitted = model.predict(frame[PRIOR_FEATURES].to_numpy(dtype=float))
+    print(f"  box-score prior fit on {len(frame)} player-seasons, "
+          f"R2 {model.score(frame[PRIOR_FEATURES].to_numpy(dtype=float), frame['rapm']):.3f}")
+
+    priors = box.dropna(subset=PRIOR_FEATURES).copy()
+    priors["prior"] = model.predict(priors[PRIOR_FEATURES].to_numpy(dtype=float))
+    lookup = priors.set_index(["season", "player_id"])["prior"].to_dict()
+
+    out = []
+    for yr, (stints, season_box) in sorted(kept.items()):
+        fit = _fit_with_prior(stints, season_box, yr, league, lookup)
+        if fit is not None:
+            out.append(fit)
+    if not out:
+        return ratings
+    prior_col = pd.concat(out, ignore_index=True)
+    return ratings.merge(prior_col, on=["season", "player_id"], how="left")
+
+
+def _load_optional_players(league: League) -> pd.DataFrame | None:
+    """The player-season box table, if the other ETL has run."""
+    path = DATA / f"players{league.suffix}.parquet"
+    if not path.exists():
+        return None
+    df = pd.read_parquet(path)
+    df["season"] = df["season"].astype(str)
+    df["player_id"] = pd.to_numeric(df["player_id"], errors="coerce").astype("Int64")
+    keep = ["season", "player_id"] + [c for c in PRIOR_FEATURES if c in df.columns]
+    return df[keep] if len(keep) > 2 else None
+
+
+def _fit_with_prior(stints: pd.DataFrame, box: pd.DataFrame, season: int,
+                    league: League, lookup: dict) -> pd.DataFrame | None:
+    """One season's RAPM, centred on the box-score prior rather than zero."""
+    from scipy import sparse
+    from sklearn.linear_model import Ridge
+
+    built = _design(stints)
+    if built is None:
+        return None
+    design, weight, targets, players, offense, defense, _ = built
+    # The prior speaks to total impact, so the refit works on the total.
+    target = targets.sum(axis=1)
+    # A player with no box row starts at average, which is what zero means here.
+    mu = np.zeros(design.shape[1])
+    for p in players:
+        prior = lookup.get((str(season), int(p)))
+        if prior is not None and np.isfinite(prior):
+            # Split evenly across the two ends: the box model predicts a total
+            # and has nothing to say about which half it came from.
+            mu[offense[p]] = prior / 2
+            mu[defense[p]] = prior / 2
+    model = Ridge(alpha=RIDGE_ALPHA[league.key])
+    model.fit(design, target - design @ mu, sample_weight=weight)
+    coef = model.coef_ + mu
+    return pd.DataFrame({
+        "season": str(season),
+        "player_id": [int(p) for p in players],
+        "rapm_prior": [round(float(coef[offense[p]] + coef[defense[p]]), 2)
+                       for p in players],
+    })
 
 
 def write_merged(out: pd.DataFrame, stem: str, sort_by: list[str],

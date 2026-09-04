@@ -17,16 +17,16 @@ export function ViewTabs({
   onChange: (v: string) => void;
 }) {
   return (
-    <div className="no-scrollbar flex gap-5 overflow-x-auto border-b border-border">
+    <div className="no-scrollbar flex gap-2 overflow-x-auto pb-1">
       {views.map((view) => (
         <button
           key={view.v}
           onClick={() => onChange(view.v)}
           className={cn(
-            "-mb-px whitespace-nowrap border-b-2 pb-2 text-sm transition",
+            "whitespace-nowrap border px-3 py-1.5 text-sm transition",
             view.v === value
-              ? "border-accent text-ink"
-              : "border-transparent text-mute hover:text-ink"
+              ? "border-accent bg-accent/10 text-ink"
+              : "border-transparent text-mute hover:border-border hover:text-ink"
           )}
         >
           {view.label}

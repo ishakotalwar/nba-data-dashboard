@@ -660,7 +660,6 @@ export function ShotAnalysis({ meta, seed }: { meta: Meta; seed?: any }) {
       <Card>
         <CardHeader
           title="Shot analysis"
-          subtitle="Hover a court zone to peek its numbers — click to highlight that section and open its breakdown against the league."
           right={
             <div className="flex items-center gap-5 text-sm">
               <SeasonTypeToggle meta={meta} value={seasonType} onChange={setSeasonType} />

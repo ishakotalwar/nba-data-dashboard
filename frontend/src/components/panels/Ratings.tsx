@@ -23,16 +23,25 @@ const asTotal = (rate: number | null, poss: number | null) =>
 
 type Col = { key: string; label: string; title: string; strong?: boolean };
 
-const COLS: Col[] = [
-  { key: "share", label: "Load", title: "Share of his team's possessions he was on the floor for" },
+const LOAD: Col = {
+  key: "share",
+  label: "Load",
+  title: "Share of his team's possessions he was on the floor for",
+};
+
+// Offence and defence only exist for the fits that split a possession in two.
+const SIDES: Col[] = [
   { key: "off_rating", label: "Off", title: "What he adds on offense" },
   {
     key: "def_rating",
     label: "Def",
     title: "What he prevents on defense — positive is good, as on offense",
   },
-  { key: "rapm", label: "Impact", title: "Offense plus defense", strong: true },
 ];
+
+/** Metrics built by splitting each possession into an offensive and a
+ *  defensive half, and so the only ones with parts to show. */
+const SPLIT_METRICS = ["rapm"];
 
 /** The parts each half breaks into, nested the way they add up. */
 const PARTS = [
@@ -90,6 +99,7 @@ export function Ratings({ meta }: { meta: Meta }) {
   // league and in a postseason a fifth the length of a season.
   const [minShare, setMinShare] = useState(55);
   const [scale, setScale] = useState<"per100" | "total">("per100");
+  const [metric, setMetric] = useState("rapm");
   const [data, setData] = useState<any>(null);
   const [err, setErr] = useState<string | null>(null);
   const [sort, setSort] = useState<{ key: string; dir: 1 | -1 }>({ key: "rapm", dir: -1 });
@@ -110,6 +120,7 @@ export function Ratings({ meta }: { meta: Meta }) {
         team: team || undefined,
         minShare: minShare / 100,
         seasonType,
+        metric,
         limit: 250,
       })
       .then((d) => {
@@ -121,9 +132,25 @@ export function Ratings({ meta }: { meta: Meta }) {
         setData(null);
         setPicked(null);
       });
-  }, [season, team, minShare, seasonType, meta.league]);
+  }, [season, team, minShare, seasonType, metric, meta.league]);
 
   const rows = data?.rows ?? [];
+  const metrics = meta.impact_metrics ?? {};
+  const ranked = data?.metric_column ?? "rapm";
+  const split = SPLIT_METRICS.includes(metric);
+  const columns: Col[] = [
+    LOAD,
+    ...(split ? SIDES : []),
+    {
+      key: ranked,
+      label: metrics[metric]?.label ?? "Impact",
+      title: metrics[metric]?.blurb ?? "",
+      strong: true,
+    },
+  ];
+  // A metric change re-ranks the table, so the sort follows it rather than
+  // leaving the arrow on a column that is no longer there.
+  useEffect(() => setSort({ key: ranked, dir: -1 }), [ranked]);
 
   // Per 100 is what the model fits; total is that rate over the possessions he
   // actually played, which rewards the durability the rate deliberately ignores.
@@ -189,7 +216,6 @@ export function Ratings({ meta }: { meta: Meta }) {
   );
 
   const seasonLabel = season ? formatSeason(season, meta.season_format) : "";
-  const unit = scale === "total" ? "points across the season" : "points per 100 possessions";
 
   if (!regularSeasons.length) {
     return (
@@ -213,12 +239,6 @@ export function Ratings({ meta }: { meta: Meta }) {
       <Card>
         <CardHeader
           title="Impact"
-          subtitle={
-            playoffSeasons.length
-              ? `Each player's value in ${unit}, once the other nine on the floor are regressed out of every possession.`
-              : `Each player's value in ${unit}, once the other nine on the floor are regressed out of every possession. ` +
-                `No ${meta.league_label} postseason is long enough to fit one of its own.`
-          }
           right={
             <div className="flex items-center gap-5 text-sm">
               <Toggle
@@ -242,7 +262,28 @@ export function Ratings({ meta }: { meta: Meta }) {
             </div>
           }
         />
-        <CardBody>
+        <CardBody className="space-y-3">
+          <div>
+            <div className="label mb-1.5">Metric</div>
+            <div className="flex flex-wrap gap-2">
+              {Object.entries(metrics).map(([key, m]) => (
+                <button
+                  key={key}
+                  type="button"
+                  onClick={() => setMetric(key)}
+                  title={m.blurb}
+                  className={cn(
+                    "border px-3 py-1.5 text-sm transition",
+                    key === metric
+                      ? "border-accent bg-accent/10 text-ink"
+                      : "border-border text-mute hover:text-ink"
+                  )}
+                >
+                  {m.label}
+                </button>
+              ))}
+            </div>
+          </div>
           <div className="grid gap-3 md:grid-cols-3">
             <div>
               <div className="label mb-1.5">Season</div>
@@ -277,14 +318,6 @@ export function Ratings({ meta }: { meta: Meta }) {
 
       <div className="grid gap-4 lg:grid-cols-2">
         <Card>
-          <CardHeader
-            title={`Best players — ${seasonLabel}`}
-            subtitle={
-              data
-                ? `${data.qualified} of ${data.pool} played ${minShare}%+ of their team's possessions · pick a row to break it down`
-                : undefined
-            }
-          />
           <CardBody className="p-0">
             {sorted.length === 0 ? (
               <div className="py-10 text-center text-sm text-mute">
@@ -296,7 +329,7 @@ export function Ratings({ meta }: { meta: Meta }) {
                   <thead className="sticky top-0 z-10 bg-bg">
                     <tr className="text-left text-xs uppercase tracking-wider text-mute">
                       <th className="px-3 py-2 font-medium">Player</th>
-                      {COLS.map((c) => (
+                      {columns.map((c) => (
                         <th key={c.key} className="px-2 py-2 text-right font-medium">
                           <button
                             title={c.title}
@@ -329,7 +362,7 @@ export function Ratings({ meta }: { meta: Meta }) {
                         <td className="px-3 py-1.5">
                           <div className="flex items-center gap-2">
                             <span className="w-5 shrink-0 text-right text-xs tabular-nums text-mute">
-                              {sort.key === "rapm" && sort.dir === -1 ? i + 1 : ""}
+                              {sort.key === ranked && sort.dir === -1 ? i + 1 : ""}
                             </span>
                             <Avatar
                               name={r.player_name}
@@ -341,7 +374,7 @@ export function Ratings({ meta }: { meta: Meta }) {
                             {!team && <span className="text-xs text-mute">{r.team_abbr}</span>}
                           </div>
                         </td>
-                        {COLS.map((c) => (
+                        {columns.map((c) => (
                           <td
                             key={c.key}
                             className={cn(
@@ -351,6 +384,10 @@ export function Ratings({ meta }: { meta: Meta }) {
                           >
                             {c.key === "share"
                               ? `${((r.share ?? 0) * 100).toFixed(0)}%`
+                              // PER is an index, not points, so it is neither
+                              // signed nor convertible to a season total.
+                              : c.key === "per"
+                              ? (r.per ?? null) == null ? "" : r.per.toFixed(1)
                               : signed(value(r, c.key), scale === "total" ? 0 : 2)}
                           </td>
                         ))}
@@ -364,10 +401,10 @@ export function Ratings({ meta }: { meta: Meta }) {
         </Card>
 
         <div className="space-y-4">
+          {split && (
           <Card>
             <CardHeader
               title={`Offense and defense — ${seasonLabel}`}
-              subtitle="Up and to the right helps at both ends."
             />
             <CardBody>
               <Plot
@@ -378,8 +415,9 @@ export function Ratings({ meta }: { meta: Meta }) {
               />
             </CardBody>
           </Card>
+          )}
 
-          {selected && (
+          {selected && split && (
             <Card>
               <CardHeader
                 lead={

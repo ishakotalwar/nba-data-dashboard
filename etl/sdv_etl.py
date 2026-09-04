@@ -114,6 +114,10 @@ PLAYER_NUM_COLS = [
     "field_goals_made", "field_goals_attempted",
     "three_point_field_goals_made", "three_point_field_goals_attempted",
     "free_throws_made", "free_throws_attempted",
+    # Kept as raw counts, not just the percentages derived from them: the
+    # box-score impact metrics need the attempts, the rebound split and the
+    # fouls, and a rate cannot be turned back into them.
+    "offensive_rebounds", "defensive_rebounds", "fouls",
 ]
 
 
@@ -140,6 +144,8 @@ def build_players(p: pd.DataFrame) -> pd.DataFrame:
         fg3m=("three_point_field_goals_made", "sum"),
         fg3a=("three_point_field_goals_attempted", "sum"),
         ftm=("free_throws_made", "sum"), fta=("free_throws_attempted", "sum"),
+        oreb=("offensive_rebounds", "sum"), dreb=("defensive_rebounds", "sum"),
+        pf=("fouls", "sum"),
     )
 
     # Team of record: the team a player logged the most games for that season.
@@ -175,6 +181,15 @@ def build_players(p: pd.DataFrame) -> pd.DataFrame:
     plays = tot["fga"] + 0.44 * tot["fta"] + tot["tov_tot"]
     tm_plays = tot["tm_fga"] + 0.44 * tot["tm_fta"] + tot["tm_tov"]
     out["usg_pct"] = _rate(plays * (tot["tm_min"] / 5.0), tot["min_tot"] * tm_plays).round(3)
+
+    # Season totals, for the metrics that need counts rather than averages.
+    for name, col in [("min_tot", "min_tot"), ("fgm", "fgm"), ("fga", "fga"),
+                      ("fg3m", "fg3m"), ("fg3a", "fg3a"), ("ftm", "ftm"),
+                      ("fta", "fta"), ("oreb", "oreb"), ("dreb", "dreb"),
+                      ("pf", "pf"), ("ast_tot", "ast_tot"), ("tov_tot", "tov_tot"),
+                      ("stl_tot", "stl_tot"), ("blk_tot", "blk_tot"),
+                      ("pts_tot", "pts_tot"), ("reb_tot", "reb_tot")]:
+        out[name] = tot[col]
     return out.sort_values(["season", "player_name"]).reset_index(drop=True)
 
 

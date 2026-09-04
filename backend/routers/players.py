@@ -4,7 +4,7 @@ from __future__ import annotations
 import pandas as pd
 from fastapi import APIRouter, HTTPException
 
-from .. import analytics, data, leagues, live
+from .. import analytics, data, impact, leagues, live
 
 router = APIRouter(prefix="/api", tags=["players"])
 
@@ -190,7 +190,7 @@ def player_search(q: str = "", limit: int = 12, league: str | None = None):
 @router.get("/players/ratings")
 def player_ratings(season: str, league: str | None = None, team: str | None = None,
                    season_type: str = "regular", min_share: float = 0.55,
-                   limit: int = 250):
+                   metric: str = "rapm", limit: int = 250):
     """Impact ratings for one season, best first.
 
     Each player's number is the points per 100 possessions he is responsible for
@@ -211,6 +211,9 @@ def player_ratings(season: str, league: str | None = None, team: str | None = No
     if df is None:
         raise HTTPException(404, f"No {lg.label} rating data. "
                                  f"Run `python etl/lineup_etl.py --league {lg.key}`.")
+    if metric not in data.IMPACT_METRICS:
+        raise HTTPException(400, f"Unknown metric {metric!r}. Expected one of: "
+                                 f"{', '.join(data.IMPACT_METRICS)}")
     if season_type not in data.RATING_SEASON_TYPES:
         raise HTTPException(400, f"Unknown season type {season_type!r}. Expected one "
                                  f"of: {', '.join(data.RATING_SEASON_TYPES)}")
@@ -219,6 +222,13 @@ def player_ratings(season: str, league: str | None = None, team: str | None = No
         raise HTTPException(
             404, f"No {lg.label} {season_type} ratings for {season}. Seasons on disk: "
                  f"{', '.join(data.rating_seasons(lg, season_type)) or 'none'}")
+
+    # PER is box-score arithmetic and lives outside the stint data, so it is
+    # joined on rather than stored beside the fitted numbers.
+    box = impact.per(lg)
+    if box is not None:
+        sub = sub.merge(box[box["season"] == str(season)], on=["season", "player_id"],
+                        how="left")
 
     # Five players are on the floor for each of a team's possessions, so its
     # players' possessions sum to five times the team's own.
@@ -229,15 +239,21 @@ def player_ratings(season: str, league: str | None = None, team: str | None = No
         sub = sub[sub["team_name"] == team]
 
     qualified = sub[sub["share"].fillna(0) >= float(min_share)].copy()
-    for col in data.RATING_COLUMNS:
+    ranked = data.IMPACT_METRICS[metric]["column"]
+    for col in set(data.RATING_COLUMNS) | {ranked}:
         if col in qualified.columns:
             qualified[f"pct_{col}"] = (
                 pd.to_numeric(qualified[col], errors="coerce").rank(pct=True) * 100
             ).round(0)
-    ordered = qualified.sort_values("rapm", ascending=False).head(limit)
+    if ranked not in qualified.columns:
+        raise HTTPException(404, f"No {data.IMPACT_METRICS[metric]['label']} on disk "
+                                 f"for {lg.label} {season}. Re-run the lineup ETL.")
+    ordered = qualified.sort_values(ranked, ascending=False, na_position="last").head(limit)
     return analytics.json_safe({
         "season": str(season), "league": lg.key, "team": team,
         "season_type": season_type,
+        "metric": metric,
+        "metric_column": ranked,
         "min_share": float(min_share),
         "qualified": int(len(qualified)),
         "pool": int(len(sub)),

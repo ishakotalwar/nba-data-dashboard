@@ -16,6 +16,10 @@ const DIVERGING: [number, string][] = [
   [1, "#4dabff"],
 ];
 
+// Picked fives are drawn in a colour the scale above never uses. Orange or
+// green would land inside it and read as a rating rather than a selection.
+const PICKED = "#b084ff";
+
 type Col = {
   key: string;
   label: string;
@@ -57,10 +61,17 @@ export function Lineups({ meta }: { meta: Meta }) {
   const [data, setData] = useState<any>(null);
   const [err, setErr] = useState<string | null>(null);
   const [sort, setSort] = useState<{ key: string; dir: 1 | -1 }>({ key: "min", dir: -1 });
+  // Which fives are pinned onto the chart. Keyed by the five itself so the
+  // selection survives re-sorting and re-fetching.
+  const [picked, setPicked] = useState<string[]>([]);
 
   // A team's whole rotation is a few dozen lineups; the league's is thousands,
   // so the league view needs a higher bar to stay a list a person can read.
   useEffect(() => setMinMinutes(team ? 50 : 100), [team]);
+
+  // A different season, team or floor is a different set of fives, so a
+  // selection made against the old one would highlight nothing.
+  useEffect(() => setPicked([]), [season, team, minMinutes, meta.league]);
 
   useEffect(() => {
     if (!season) return;
@@ -75,6 +86,13 @@ export function Lineups({ meta }: { meta: Meta }) {
   }, [season, team, minMinutes, meta.league]);
 
   const rows = data?.rows ?? [];
+  const keyOf = (r: any) =>
+    `${r.team_abbr}-${r.players.map((p: any) => p.id).join("-")}`;
+  const togglePick = (r: any) =>
+    setPicked((current) => {
+      const k = keyOf(r);
+      return current.includes(k) ? current.filter((x) => x !== k) : [...current, k];
+    });
 
   const sorted = useMemo(() => {
     const r = [...rows];
@@ -92,33 +110,45 @@ export function Lineups({ meta }: { meta: Meta }) {
     // Minutes drive the marker area, not its radius: at radius the biggest
     // lineup swallows the chart.
     const maxMin = Math.max(...rows.map((r: any) => r.min));
-    // Label the extremes of the league view by team, the way the league table
-    // does. One team's own lineups all carry the same abbreviation, so there
-    // the marker goes unlabelled and hover names the five.
     const byNet = [...rows].sort((a: any, b: any) => b.net - a.net);
-    const labelled = new Set(team ? [] : [...byNet.slice(0, 3), ...byNet.slice(-2)]);
-    return [
+    // With nothing picked, label the extremes of the league view by team, the
+    // way the league table does. One team's own lineups all carry the same
+    // abbreviation, so there the marker goes unlabelled and hover names the
+    // five. Once fives are picked, they are the only thing worth labelling.
+    const auto = new Set(team || picked.length ? [] : [...byNet.slice(0, 3), ...byNet.slice(-2)]);
+    const isPicked = (r: any) => picked.includes(keyOf(r));
+    const chosen = rows.filter(isPicked);
+    const rest = picked.length ? rows.filter((r: any) => !isPicked(r)) : rows;
+    const size = (r: any) => 8 + 26 * Math.sqrt(r.min / maxMin);
+    const hover =
+      "<b>%{hovertext}</b><br>%{customdata[0]:.0f} min over %{customdata[2]} games<br>" +
+      "ORtg %{x:.1f} · DRtg %{y:.1f} · Net %{customdata[1]:+.1f}<extra></extra>";
+    const describe = (r: any) =>
+      `${r.team_abbr} · ${r.players.map((p: any) => surname(p.name)).join(", ")}`;
+    const facts = (r: any) => [r.min, r.net, r.games];
+
+    const base = {
+      type: "scatter",
+      mode: "markers+text",
+      textposition: "top center",
+      hovertemplate: hover,
+    };
+    const out: any[] = [
       {
-        type: "scatter",
-        mode: "markers+text",
-        x: rows.map((r: any) => r.ortg),
-        y: rows.map((r: any) => r.drtg),
-        text: rows.map((r: any) => (labelled.has(r) ? r.team_abbr : "")),
-        textposition: "top center",
+        ...base,
+        x: rest.map((r: any) => r.ortg),
+        y: rest.map((r: any) => r.drtg),
+        text: rest.map((r: any) => (auto.has(r) ? r.team_abbr : "")),
         textfont: { size: 10, color: "#8a94a2" },
-        hovertext: rows.map((r: any) =>
-          `${r.team_abbr} · ${r.players.map((p: any) => surname(p.name)).join(", ")}`
-        ),
-        customdata: rows.map((r: any) => [r.min, r.net, r.games]),
-        hovertemplate:
-          "<b>%{hovertext}</b><br>%{customdata[0]:.0f} min over %{customdata[2]} games<br>" +
-          "ORtg %{x:.1f} · DRtg %{y:.1f} · Net %{customdata[1]:+.1f}<extra></extra>",
+        hovertext: rest.map(describe),
+        customdata: rest.map(facts),
         marker: {
-          size: rows.map((r: any) => 8 + 26 * Math.sqrt(r.min / maxMin)),
-          color: rows.map((r: any) => r.net),
+          size: rest.map(size),
+          color: rest.map((r: any) => r.net),
           colorscale: DIVERGING,
           cmid: 0,
-          opacity: 0.85,
+          // Picked fives sit on top of a quieted field.
+          opacity: picked.length ? 0.25 : 0.85,
           line: { color: "#111518", width: 1.5 },
           colorbar: {
             title: { text: "Net", side: "right" },
@@ -129,7 +159,27 @@ export function Lineups({ meta }: { meta: Meta }) {
         },
       },
     ];
-  }, [rows, team]);
+    if (chosen.length) {
+      out.push({
+        ...base,
+        x: chosen.map((r: any) => r.ortg),
+        y: chosen.map((r: any) => r.drtg),
+        text: chosen.map((r: any) =>
+          r.players.map((p: any) => surname(p.name)).join(" · ")
+        ),
+        textfont: { size: 10, color: PICKED },
+        hovertext: chosen.map(describe),
+        customdata: chosen.map(facts),
+        marker: {
+          size: chosen.map(size),
+          color: PICKED,
+          opacity: 1,
+          line: { color: "#111518", width: 2 },
+        },
+      });
+    }
+    return out;
+  }, [rows, team, picked.join(",")]);
 
   const layout = useMemo(
     () => ({
@@ -184,7 +234,6 @@ export function Lineups({ meta }: { meta: Meta }) {
       <Card>
         <CardHeader
           title="Lineups"
-          subtitle="Rebuilt from play-by-play substitutions — who was actually on the floor together, and what happened while they were."
         />
         <CardBody>
           <div className="grid gap-3 md:grid-cols-3">
@@ -229,7 +278,6 @@ export function Lineups({ meta }: { meta: Meta }) {
       <Card>
         <CardHeader
           title={team ? `${team} — ${seasonLabel}` : `Every five — ${seasonLabel}`}
-          subtitle="Bubble size is minutes played together."
         />
         <CardBody>
           <Plot
@@ -277,22 +325,28 @@ export function Lineups({ meta }: { meta: Meta }) {
                 <tbody>
                   {sorted.map((r: any) => (
                     <tr
-                      key={`${r.team_abbr}-${r.players.map((p: any) => p.id).join("-")}`}
-                      className="border-t border-border/60 hover:bg-border/30"
+                      key={keyOf(r)}
+                      onClick={() => togglePick(r)}
+                      title="Show this five on the chart"
+                      className={cn(
+                        "cursor-pointer border-t border-border/60 hover:bg-border/30",
+                        // Matches the chart's pick colour, not the accent.
+                        picked.includes(keyOf(r)) && "bg-[#b084ff]/15"
+                      )}
                     >
                       <td className="px-4 py-2">
                         <div className="flex items-center gap-2">
                           {!team && (
                             <span className="w-9 shrink-0 text-xs text-mute">{r.team_abbr}</span>
                           )}
-                          <div className="flex -space-x-1.5">
+                          <div className="flex gap-1">
                             {r.players.map((p: any) => (
                               <Avatar
                                 key={p.id}
                                 name={p.name}
                                 id={p.id}
                                 league={meta.league}
-                                size={24}
+                                size={30}
                               />
                             ))}
                           </div>

@@ -43,6 +43,8 @@ def meta(league: str | None = None):
         "rating_seasons": data.rating_seasons(lg),
         "rating_playoff_seasons": data.rating_seasons(lg, "playoffs"),
         "rating_season_types": data.RATING_SEASON_TYPES,
+        # How impact can be measured; the page's picker is built from this.
+        "impact_metrics": data.IMPACT_METRICS,
         "metrics": data.available_metrics(lg),
         # How a counting stat can be expressed: per game, per 36, per 100 poss.
         "rate_bases": data.RATE_BASES,

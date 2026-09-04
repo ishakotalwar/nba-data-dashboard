@@ -137,13 +137,6 @@ export function Explorer({ meta, seed }: { meta: Meta; seed?: any }) {
       <Card>
         <CardHeader
           title="Stat explorer"
-          subtitle={
-            per === "game"
-              ? "Filters and sorting apply on the chosen basis, so ≥25 points means 25 per game."
-              : `Filters and sorting apply on the chosen basis. Rates need a sample to mean ` +
-                `anything, so this opens at ${RATE_QUALIFIER.games}+ games and ` +
-                `${RATE_QUALIFIER.minutes}+ minutes — lower them if you want the tail.`
-          }
           right={<RateToggle meta={meta} value={per} onChange={changeBasis} />}
         />
         <CardBody className="space-y-4">

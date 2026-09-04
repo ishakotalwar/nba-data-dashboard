@@ -234,7 +234,6 @@ export function Similar({ meta, seed }: { meta: Meta; seed?: any }) {
         <Card className="lg:col-span-3">
           <CardHeader
             title="Most similar seasons"
-            subtitle={matches.length > 0 ? "Click a season to add or remove it from the overlay" : undefined}
           />
           <CardBody className="p-0">
             {matches.length === 0 ? (

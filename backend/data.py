@@ -41,6 +41,46 @@ POSSESSION_BASES = {"per75": 75.0, "per100": 100.0}
 # a continuation of the season, so the two are never pooled.
 RATING_SEASON_TYPES = {"regular": "Regular season", "playoffs": "Playoffs"}
 
+# How impact can be measured. Each is a real metric with a stated method, not a
+# relabelling of the same number: the possession-level fits differ in what they
+# shrink toward and over how long, and the box-score ones never see a stint.
+# LEBRON, EPM and DARKO are deliberately absent — they need player-tracking
+# inputs ESPN does not publish, so anything here wearing those names would be
+# this app's own metric in borrowed clothes.
+IMPACT_METRICS = {
+    "rapm": {
+        "label": "RAPM",
+        "column": "rapm",
+        "blurb": "One season of stints, regressed against the other nine on the "
+                 "floor. Current, and the noisiest of the three.",
+    },
+    "rapm_window": {
+        "label": "RAPM · 3yr",
+        "column": "rapm_window",
+        "blurb": "The same fit over three seasons. Steadier, at the cost of "
+                 "describing this season in particular.",
+    },
+    "rapm_prior": {
+        "label": "Box-prior RAPM",
+        "column": "rapm_prior",
+        "blurb": "Shrunk toward what the box score predicts rather than toward "
+                 "average, so thin samples start somewhere defensible.",
+    },
+    "per": {
+        "label": "PER",
+        "column": "per",
+        "blurb": "Hollinger's per-minute box-score rating, scaled so the league "
+                 "average is 15. Sees no possessions and no defence beyond "
+                 "steals and blocks.",
+    },
+    "on_off": {
+        "label": "On/off",
+        "column": "on_off",
+        "blurb": "Raw team net rating with him on the floor minus without. "
+                 "Unadjusted, so it carries his teammates with it.",
+    },
+}
+
 # The impact columns a page can rank on, in the order they nest: the parts,
 # then each side's total, then the whole.
 RATING_PARTS = ["field_goals", "free_throws", "second_chance", "turnovers"]

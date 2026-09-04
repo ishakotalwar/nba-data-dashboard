@@ -56,7 +56,13 @@ committed, so the deployed API calls nothing.
   than his team. Changing the basis moves percentiles and ranks too, not just
   the number shown.
 - It publishes no impact metric either — no BPM, no RPM — so the Impact page
-  computes one from the rebuilt stints. Every stint becomes two observations,
+  computes its own, and offers five ways to rank: a one-season RAPM, the same
+  fit over a rolling three seasons, a version shrunk toward what the box score
+  predicts rather than toward average, Hollinger's PER, and raw on-off. LEBRON,
+  EPM and DARKO are deliberately absent: they need player-tracking inputs ESPN
+  does not publish, so anything here wearing those names would be this app's own
+  metric in borrowed clothes. The possession-level ones are built from the
+  rebuilt stints. Every stint becomes two observations,
   one per direction of play: the five attacking carry +1 in their offensive
   column, the five defending -1 in their defensive column, against points
   scored per 100 possessions. That gives each player an offensive and a

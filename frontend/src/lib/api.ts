@@ -67,6 +67,8 @@ export type Meta = {
   rating_playoff_seasons: string[];
   /** Which games a rating was fit on: regular season or playoffs. */
   rating_season_types: Record<string, string>;
+  /** How impact can be measured: key -> { label, column, blurb }. */
+  impact_metrics: Record<string, { label: string; column: string; blurb: string }>;
   invert_metrics: string[];
   // Three-point geometry for this league, in tenths of a foot from the hoop.
   court: { arc: number; corner: number };
@@ -266,12 +268,19 @@ export const api = {
   playerRatings: (
     season: string,
     league: LeagueKey,
-    opts: { minShare?: number; limit?: number; team?: string; seasonType?: string } = {}
+    opts: {
+      minShare?: number;
+      limit?: number;
+      team?: string;
+      seasonType?: string;
+      metric?: string;
+    } = {}
   ) =>
     fetch(
       `${BASE}/players/ratings?${q_(league, {
         season,
         season_type: opts.seasonType ?? "regular",
+        metric: opts.metric ?? "rapm",
         min_share: String(opts.minShare ?? 0.55),
         limit: String(opts.limit ?? 250),
         ...(opts.team ? { team: opts.team } : {}),
