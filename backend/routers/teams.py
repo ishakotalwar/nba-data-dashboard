@@ -2,6 +2,9 @@
 head-to-head team-season comparison, and all-time leaderboards."""
 from __future__ import annotations
 
+from collections import defaultdict
+from itertools import combinations
+
 import pandas as pd
 from fastapi import APIRouter, HTTPException
 from pydantic import BaseModel
@@ -156,16 +159,69 @@ def _lineup_rows(df: pd.DataFrame) -> list[dict]:
     return data.records(out[cols].rename(columns={"team_name": "team"}))
 
 
+# A group smaller than a five is every five that contains it, added up.
+GROUP_SIZES = [2, 3, 4, 5]
+
+
+def _groups_of(sub: pd.DataFrame, size: int) -> pd.DataFrame:
+    """Roll five-man rows up into every group of `size` inside them.
+
+    Each possession belongs to exactly one five, so a pair's minutes are the
+    minutes of every five containing that pair — no double counting, and the
+    totals stay exact. Games cannot be carried across: two fives may share a
+    game, and the stored counts would add it twice, so the column is dropped
+    rather than reported wrongly.
+    """
+    totals: dict = defaultdict(lambda: [0.0, 0.0, 0.0, 0.0, 0.0])
+    names: dict = {}
+    teams: dict = {}
+    for r in sub.itertuples():
+        ids = [int(i) for i in r.player_ids.split("|")]
+        for pid, name in zip(ids, r.player_names.split("|")):
+            names[pid] = name
+        for group in combinations(sorted(ids), size):
+            key = (r.team_id, group)
+            teams[key] = (r.team_name, r.team_abbr, r.team_min)
+            slot = totals[key]
+            slot[0] += r.min
+            slot[1] += r.poss
+            slot[2] += r.pts_for
+            slot[3] += r.pts_against
+            slot[4] += r.stints
+    rows = []
+    for (team_id, group), (mins, poss, pf, pa, stints) in totals.items():
+        team_name, team_abbr, team_min = teams[(team_id, group)]
+        rows.append({
+            "season": sub["season"].iloc[0],
+            "team_id": team_id,
+            "team_name": team_name,
+            "team_abbr": team_abbr,
+            "player_ids": "|".join(str(p) for p in group),
+            "player_names": "|".join(names[p] for p in group),
+            "games": None,
+            "stints": int(stints),
+            "min": round(mins, 1),
+            "team_min": team_min,
+            "poss": round(poss, 1),
+            "pts_for": int(pf),
+            "pts_against": int(pa),
+        })
+    return pd.DataFrame(rows)
+
+
 @router.get("/lineups")
 def team_lineups(season: str, team: str | None = None, league: str | None = None,
-                 min_minutes: float = 50, limit: int = 250):
-    """Five-man lineups for one season, either league-wide or for one team.
+                 size: int = 5, min_minutes: float = 50, limit: int = 250):
+    """The best groups of players for one season, league-wide or for one team.
 
     Rebuilt from play-by-play substitutions by `etl/lineup_etl.py` — the box
     scores say what a player did, only the substitutions say who they did it
-    alongside.
+    alongside. A `size` below five rolls the fives up into the pairs, trios or
+    quartets inside them.
     """
     lg = leagues.get(league)
+    if size not in GROUP_SIZES:
+        raise HTTPException(400, f"size must be one of {GROUP_SIZES}")
     df = data.lineups(lg)
     if df is None:
         raise HTTPException(404, f"No {lg.label} lineup data. "
@@ -181,11 +237,15 @@ def team_lineups(season: str, team: str | None = None, league: str | None = None
             raise HTTPException(404, f"{team} has no {season} lineups")
         team_total = float(sub["team_min"].iloc[0])
 
+    if size < 5:
+        sub = _groups_of(sub, size)
+
     qualified = sub[sub["min"] >= float(min_minutes)]
     ordered = qualified.sort_values("min", ascending=False).head(limit)
     rows = _lineup_rows(ordered)
     return analytics.json_safe({
         "season": str(season), "league": lg.key, "team": team,
+        "size": size,
         "min_minutes": float(min_minutes),
         "rows": rows,
         # The floor hides lineups, and the ETL's own floor hides more. Both
@@ -305,7 +365,9 @@ def team_wowy(season: str, team: str, league: str | None = None,
             entry = _rates(_combination_label(on, off), group, on, off)
             if entry["min"] >= MIN_COMBINATION_MINUTES:
                 rows.append(entry)
-        rows.sort(key=lambda r: r["min"], reverse=True)
+        # Best first: the question is which combination played well, and
+        # minutes are already a column for judging how much to trust it.
+        rows.sort(key=lambda r: (r["net"] is not None, r["net"]), reverse=True)
 
     return analytics.json_safe({
         "season": str(season), "league": lg.key, "team": team,

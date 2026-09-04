@@ -5,11 +5,13 @@ import { TeamCompare } from "./TeamCompare";
 import { Teams } from "./Teams";
 import { Lineups } from "./Lineups";
 import { Wowy } from "./Wowy";
+import { TeamMatchup } from "./TeamMatchup";
 import { TeamRankings } from "./TeamRankings";
 
 const VIEWS = [
   { v: "league", label: "League table" },
   { v: "team", label: "Team profile" },
+  { v: "compare", label: "Compare" },
   { v: "lineups", label: "Lineups" },
   { v: "wowy", label: "WOWY" },
   { v: "leaders", label: "All-time leaders" },
@@ -31,6 +33,7 @@ export function TeamsSection({ meta, view }: { meta: Meta; view?: string }) {
       <ViewTabs views={VIEWS} value={active} onChange={setActive} />
       {active === "league" && <TeamCompare meta={meta} />}
       {active === "team" && <Teams meta={meta} />}
+      {active === "compare" && <TeamMatchup meta={meta} />}
       {active === "lineups" && <Lineups meta={meta} />}
       {active === "wowy" && <Wowy meta={meta} />}
       {active === "leaders" && <TeamRankings meta={meta} />}

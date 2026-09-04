@@ -305,7 +305,7 @@ export function Glossary() {
               onClick={(e) => e.stopPropagation()}
             >
               <div className="card-header shrink-0">
-                <div className="font-display text-2xl font-bold tracking-tight text-ink">
+                <div className="text-2xl font-bold tracking-tight text-ink">
                   Glossary
                 </div>
                 <button

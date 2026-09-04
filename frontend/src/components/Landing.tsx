@@ -11,7 +11,7 @@ export function Landing({ onPick }: { onPick: (mode: "stats" | "predictions") =>
   return (
     <div className="mx-auto max-w-4xl px-6 py-16">
       <div className="text-center">
-        <h1 className="font-display text-6xl font-bold tracking-tight text-ink sm:text-7xl">
+        <h1 className="text-6xl font-bold tracking-tight text-ink sm:text-7xl">
           Full<span className="text-accent">Court</span>
         </h1>
         <p className="mt-2 text-sm text-mute">
@@ -79,7 +79,7 @@ function Choice({
         "focus-visible:z-10 focus-visible:-translate-y-1.5 focus-visible:scale-[1.1] focus-visible:border-accent focus-visible:shadow-2xl",
       )}
     >
-      <div className="font-display text-xl font-semibold tracking-tight text-ink">{title}</div>
+      <div className="text-xl font-semibold tracking-tight text-ink">{title}</div>
       <div className="mt-0.5 text-sm text-mute">{blurb}</div>
 
       {/* The detail is held back until the card is hovered or focused. The

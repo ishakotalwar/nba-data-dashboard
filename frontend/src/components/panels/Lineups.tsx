@@ -28,8 +28,9 @@ type Col = {
   lowerBetter?: boolean;
 };
 
+// Half the width means only the columns that earn it: games is empty for any
+// group under five, and plus-minus says what net rating already says.
 const COLS: Col[] = [
-  { key: "games", label: "G", title: "Games this five appeared in", fmt: (v) => String(v ?? "") },
   { key: "min", label: "MP", title: "Minutes played together", fmt: (v) => (v == null ? "" : v.toFixed(0)) },
   { key: "share", label: "Share", title: "Share of the team's minutes",
     fmt: (v) => (v == null ? "" : `${(v * 100).toFixed(1)}%`) },
@@ -39,8 +40,6 @@ const COLS: Col[] = [
     fmt: (v) => (v == null ? "" : v.toFixed(1)), lowerBetter: true },
   { key: "net", label: "Net", title: "ORtg − DRtg",
     fmt: (v) => (v == null ? "" : (v > 0 ? "+" : "") + v.toFixed(1)) },
-  { key: "plus_minus", label: "+/−", title: "Raw points scored minus allowed",
-    fmt: (v) => (v == null ? "" : (v > 0 ? "+" : "") + v.toFixed(0)) },
 ];
 
 const ALL_TEAMS = "";
@@ -58,6 +57,9 @@ export function Lineups({ meta }: { meta: Meta }) {
   const [season, setSeason] = useState(lineupSeasons.at(-1) ?? "");
   const [team, setTeam] = useState<string>(ALL_TEAMS);
   const [minMinutes, setMinMinutes] = useState(100);
+  // How many players make a group. A five rolls up into the pairs, trios and
+  // quartets inside it.
+  const [size, setSize] = useState(5);
   const [data, setData] = useState<any>(null);
   const [err, setErr] = useState<string | null>(null);
   const [sort, setSort] = useState<{ key: string; dir: 1 | -1 }>({ key: "min", dir: -1 });
@@ -71,19 +73,19 @@ export function Lineups({ meta }: { meta: Meta }) {
 
   // A different season, team or floor is a different set of fives, so a
   // selection made against the old one would highlight nothing.
-  useEffect(() => setPicked([]), [season, team, minMinutes, meta.league]);
+  useEffect(() => setPicked([]), [season, team, minMinutes, size, meta.league]);
 
   useEffect(() => {
     if (!season) return;
     setErr(null);
     api
-      .teamLineups(season, meta.league, { team: team || undefined, minMinutes })
+      .teamLineups(season, meta.league, { team: team || undefined, minMinutes, size })
       .then(setData)
       .catch((e) => {
         setErr(e.message);
         setData(null);
       });
-  }, [season, team, minMinutes, meta.league]);
+  }, [season, team, minMinutes, size, meta.league]);
 
   const rows = data?.rows ?? [];
   const keyOf = (r: any) =>
@@ -119,7 +121,7 @@ export function Lineups({ meta }: { meta: Meta }) {
     const isPicked = (r: any) => picked.includes(keyOf(r));
     const chosen = rows.filter(isPicked);
     const rest = picked.length ? rows.filter((r: any) => !isPicked(r)) : rows;
-    const size = (r: any) => 8 + 26 * Math.sqrt(r.min / maxMin);
+    const markerSize = (r: any) => 8 + 26 * Math.sqrt(r.min / maxMin);
     const hover =
       "<b>%{hovertext}</b><br>%{customdata[0]:.0f} min over %{customdata[2]} games<br>" +
       "ORtg %{x:.1f} · DRtg %{y:.1f} · Net %{customdata[1]:+.1f}<extra></extra>";
@@ -143,7 +145,7 @@ export function Lineups({ meta }: { meta: Meta }) {
         hovertext: rest.map(describe),
         customdata: rest.map(facts),
         marker: {
-          size: rest.map(size),
+          size: rest.map(markerSize),
           color: rest.map((r: any) => r.net),
           colorscale: DIVERGING,
           cmid: 0,
@@ -171,7 +173,7 @@ export function Lineups({ meta }: { meta: Meta }) {
         hovertext: chosen.map(describe),
         customdata: chosen.map(facts),
         marker: {
-          size: chosen.map(size),
+          size: chosen.map(markerSize),
           color: PICKED,
           opacity: 1,
           line: { color: "#111518", width: 2 },
@@ -258,6 +260,26 @@ export function Lineups({ meta }: { meta: Meta }) {
               />
             </div>
             <div>
+              <div className="label mb-1.5">Group size</div>
+              <div className="flex gap-1.5">
+                {[2, 3, 4, 5].map((n) => (
+                  <button
+                    key={n}
+                    type="button"
+                    onClick={() => setSize(n)}
+                    className={cn(
+                      "flex-1 border px-2 py-1.5 text-sm transition",
+                      n === size
+                        ? "border-accent bg-accent/10 text-ink"
+                        : "border-border text-mute hover:text-ink"
+                    )}
+                  >
+                    {n}
+                  </button>
+                ))}
+              </div>
+            </div>
+            <div>
               <div className="label mb-1.5">
                 Minutes together — at least {minMinutes}
               </div>
@@ -275,99 +297,112 @@ export function Lineups({ meta }: { meta: Meta }) {
         </CardBody>
       </Card>
 
-      <Card>
-        <CardHeader
-          title={team ? `${team} — ${seasonLabel}` : `Every five — ${seasonLabel}`}
-        />
-        <CardBody>
-          <Plot
-            data={traces as any}
-            layout={layout as any}
-            height={480}
-            placeholder="No lineup clears this minutes floor"
+      <div className="grid gap-4 lg:grid-cols-2">
+        <Card>
+          <CardHeader
+            title="Lineup table"
+            subtitle={coverage}
+            right={
+              <div className="flex flex-wrap items-center justify-end gap-x-3 gap-y-1 text-xs text-mute">
+                {COLS.map((c) => (
+                  <button
+                    key={c.key}
+                    title={c.title}
+                    onClick={() =>
+                      setSort((s) =>
+                        s.key === c.key
+                          ? { key: c.key, dir: (s.dir * -1) as 1 | -1 }
+                          : { key: c.key, dir: c.lowerBetter ? 1 : -1 }
+                      )
+                    }
+                    className={cn(
+                      "uppercase tracking-wider transition hover:text-ink",
+                      sort.key === c.key && "text-accent"
+                    )}
+                  >
+                    {c.label}
+                    {sort.key === c.key ? (sort.dir === -1 ? " ↓" : " ↑") : ""}
+                  </button>
+                ))}
+              </div>
+            }
           />
-        </CardBody>
-      </Card>
-
-      <Card>
-        <CardHeader title="Lineup table" subtitle={coverage} />
-        <CardBody className="p-0">
-          {sorted.length === 0 ? (
-            <div className="py-10 text-center text-sm text-mute">
-              No lineup played {minMinutes} minutes together.
-            </div>
-          ) : (
-            <div className="overflow-x-auto">
-              <table className="w-full text-sm">
-                <thead>
-                  <tr className="text-left text-xs uppercase tracking-wider text-mute">
-                    <th className="px-4 py-2 font-medium">Lineup</th>
-                    {COLS.map((c) => (
-                      <th key={c.key} className="px-3 py-2 text-right font-medium">
-                        <button
-                          title={c.title}
-                          onClick={() =>
-                            setSort((s) =>
-                              s.key === c.key
-                                ? { key: c.key, dir: (s.dir * -1) as 1 | -1 }
-                                : { key: c.key, dir: c.lowerBetter ? 1 : -1 }
-                            )
-                          }
-                          className={cn("hover:text-ink", sort.key === c.key && "text-accent")}
-                        >
-                          {c.label}
-                          {sort.key === c.key ? (sort.dir === -1 ? " ↓" : " ↑") : ""}
-                        </button>
-                      </th>
-                    ))}
-                  </tr>
-                </thead>
-                <tbody>
-                  {sorted.map((r: any) => (
-                    <tr
-                      key={keyOf(r)}
-                      onClick={() => togglePick(r)}
-                      title="Show this five on the chart"
-                      className={cn(
-                        "cursor-pointer border-t border-border/60 hover:bg-border/30",
-                        // Matches the chart's pick colour, not the accent.
-                        picked.includes(keyOf(r)) && "bg-[#b084ff]/15"
+          <CardBody className="p-0">
+            {sorted.length === 0 ? (
+              <div className="py-10 text-center text-sm text-mute">
+                No group of {size} played {minMinutes} minutes together.
+              </div>
+            ) : (
+              /* Two lines rather than one wide row: at half the width a table
+                 pushed the ratings off the edge, and five names need the room
+                 more than the numbers do. */
+              <ul className="max-h-[520px] overflow-y-auto">
+                {sorted.map((r: any) => (
+                  <li
+                    key={keyOf(r)}
+                    onClick={() => togglePick(r)}
+                    title="Show this group on the chart"
+                    className={cn(
+                      "cursor-pointer border-t border-border/60 px-4 py-2.5 transition hover:bg-border/30",
+                      // Matches the chart's pick colour, not the accent.
+                      picked.includes(keyOf(r)) && "bg-[#b084ff]/15"
+                    )}
+                  >
+                    <div className="flex items-center gap-2">
+                      {!team && (
+                        <span className="w-8 shrink-0 text-xs text-mute">{r.team_abbr}</span>
                       )}
-                    >
-                      <td className="px-4 py-2">
-                        <div className="flex items-center gap-2">
-                          {!team && (
-                            <span className="w-9 shrink-0 text-xs text-mute">{r.team_abbr}</span>
-                          )}
-                          <div className="flex gap-1">
-                            {r.players.map((p: any) => (
-                              <Avatar
-                                key={p.id}
-                                name={p.name}
-                                id={p.id}
-                                league={meta.league}
-                                size={30}
-                              />
-                            ))}
-                          </div>
-                          <span className="min-w-0 truncate">
-                            {r.players.map((p: any) => surname(p.name)).join(" · ")}
-                          </span>
-                        </div>
-                      </td>
+                      <div className="flex shrink-0 gap-1">
+                        {r.players.map((p: any) => (
+                          <Avatar
+                            key={p.id}
+                            name={p.name}
+                            id={p.id}
+                            league={meta.league}
+                            size={26}
+                          />
+                        ))}
+                      </div>
+                      <span className="min-w-0 flex-1 truncate text-sm">
+                        {r.players.map((p: any) => surname(p.name)).join(" · ")}
+                      </span>
+                    </div>
+                    <div className="mt-1.5 flex flex-wrap items-baseline gap-x-4 gap-y-0.5 text-xs text-mute">
                       {COLS.map((c) => (
-                        <td key={c.key} className="px-3 py-2 text-right tabular-nums">
-                          {c.fmt(r[c.key])}
-                        </td>
+                        <span key={c.key} className="tabular-nums">
+                          <span
+                            className={cn(
+                              "mr-1 uppercase tracking-wider",
+                              sort.key === c.key && "text-accent"
+                            )}
+                          >
+                            {c.label}
+                          </span>
+                          <span className="text-ink">{c.fmt(r[c.key])}</span>
+                        </span>
                       ))}
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
-            </div>
-          )}
-        </CardBody>
-      </Card>
+                    </div>
+                  </li>
+                ))}
+              </ul>
+            )}
+          </CardBody>
+        </Card>
+
+        <Card>
+          <CardHeader
+            title={team ? `${team} — ${seasonLabel}` : `Every group of ${size} — ${seasonLabel}`}
+          />
+          <CardBody>
+            <Plot
+              data={traces as any}
+              layout={layout as any}
+              height={430}
+              placeholder="Nothing clears this minutes floor"
+            />
+          </CardBody>
+        </Card>
+      </div>
     </div>
   );
 }

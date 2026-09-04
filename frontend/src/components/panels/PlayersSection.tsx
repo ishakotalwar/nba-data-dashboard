@@ -5,9 +5,11 @@ import { Players } from "./Players";
 import { Similar } from "./Similar";
 import { ShotAnalysis } from "./ShotAnalysis";
 import { Ratings } from "./Ratings";
+import { Compare } from "./Compare";
 
 const VIEWS = [
   { v: "overview", label: "Overview" },
+  { v: "compare", label: "Compare" },
   { v: "impact", label: "Impact" },
   { v: "similar", label: "Similarity" },
   { v: "shots", label: "Shot Analysis" },
@@ -34,6 +36,7 @@ export function PlayersSection({
     <div className="space-y-4">
       <ViewTabs views={VIEWS} value={active} onChange={setActive} />
       {active === "overview" && <Players meta={meta} />}
+      {active === "compare" && <Compare meta={meta} seed={seedFor("compare")} />}
       {active === "impact" && <Ratings meta={meta} />}
       {active === "similar" && <Similar meta={meta} seed={seedFor("similarity")} />}
       {active === "shots" && <ShotAnalysis meta={meta} seed={seedFor("shots")} />}

@@ -3,7 +3,6 @@ import * as Tabs from "@radix-ui/react-tabs";
 import { api, type LeagueInfo, type LeagueKey, type Meta } from "./lib/api";
 import { cn } from "./lib/cn";
 import { PlayersSection } from "./components/panels/PlayersSection";
-import { CompareSection } from "./components/panels/CompareSection";
 import { TeamsSection } from "./components/panels/TeamsSection";
 import { Explorer } from "./components/panels/Explorer";
 import { AskFullCourt } from "@/components/AskFullCourt";
@@ -21,7 +20,6 @@ type Mode = "stats" | "predictions";
 const TABS = [
   { v: "players", label: "Players", group: "stats" },
   { v: "teams", label: "Teams", group: "stats" },
-  { v: "compare", label: "Compare", group: "stats" },
   { v: "explorer", label: "Explorer", group: "explorer" },
 ] as const;
 
@@ -30,7 +28,7 @@ const TABS = [
 const PAGE_ROUTES: Record<string, { tab: string; view?: string }> = {
   similarity: { tab: "players", view: "similar" },
   shots: { tab: "players", view: "shots" },
-  compare: { tab: "compare", view: "players" },
+  compare: { tab: "players", view: "compare" },
   teams: { tab: "teams", view: "leaders" },
   explorer: { tab: "explorer" },
 };
@@ -119,7 +117,7 @@ export default function App() {
               className="text-left"
               title="Back to the start"
             >
-              <div className="font-display text-2xl font-bold leading-none tracking-tight">
+              <div className="text-2xl font-bold leading-none tracking-tight">
                 Full<span className="text-accent">Court</span>
               </div>
             </button>
@@ -145,7 +143,7 @@ export default function App() {
                   value={t.v}
                   className={cn(
                     "-mb-px whitespace-nowrap border-b-2 border-transparent pb-2.5",
-                    "font-display text-[17px] font-medium tracking-tight text-mute transition",
+                    "text-[17px] font-medium tracking-tight text-mute transition",
                     "data-[state=active]:border-accent data-[state=active]:text-ink",
                     "hover:text-ink"
                   )}
@@ -161,9 +159,6 @@ export default function App() {
           </Tabs.Content>
           <Tabs.Content value="teams">
             <TeamsSection meta={meta} view={viewFor("teams")} />
-          </Tabs.Content>
-          <Tabs.Content value="compare">
-            <CompareSection meta={meta} view={viewFor("compare")} seedFor={seedFor} />
           </Tabs.Content>
           <Tabs.Content value="explorer">
             <Explorer meta={meta} seed={seedFor("explorer")} />

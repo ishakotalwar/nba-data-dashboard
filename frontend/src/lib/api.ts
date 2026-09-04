@@ -208,12 +208,13 @@ export const api = {
   teamLineups: (
     season: string,
     league: LeagueKey,
-    opts: { team?: string; minMinutes?: number; limit?: number } = {}
+    opts: { team?: string; minMinutes?: number; limit?: number; size?: number } = {}
   ) =>
     fetch(
       `${BASE}/teams/lineups?${q_(league, {
         season,
         ...(opts.team ? { team: opts.team } : {}),
+        size: String(opts.size ?? 5),
         min_minutes: String(opts.minMinutes ?? 50),
         limit: String(opts.limit ?? 250),
       })}`

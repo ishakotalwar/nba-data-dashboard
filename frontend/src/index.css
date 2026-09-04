@@ -95,7 +95,7 @@ body {
   }
   /* Section eyebrow above a group of controls or terms. */
   .eyebrow {
-    @apply font-display text-xs font-semibold uppercase tracking-widest text-accent2;
+    @apply text-xs font-semibold uppercase tracking-widest text-accent2;
   }
   .chip {
     @apply inline-flex items-center gap-1.5 border border-border bg-bg px-2 py-0.5 text-xs text-mute;
