@@ -305,7 +305,9 @@ export function Glossary() {
               onClick={(e) => e.stopPropagation()}
             >
               <div className="card-header shrink-0">
-                <div className="text-xl font-semibold tracking-tight text-ink">Glossary</div>
+                <div className="font-display text-2xl font-bold tracking-tight text-ink">
+                  Glossary
+                </div>
                 <button
                   type="button"
                   onClick={() => setOpen(false)}
@@ -318,9 +320,7 @@ export function Glossary() {
               <div className="card-body min-h-0 flex-1 space-y-5 overflow-y-auto">
                 {GLOSSARY.map((section) => (
                   <section key={section.heading}>
-                    <h3 className="mb-1.5 text-xs font-semibold uppercase tracking-wider text-accent">
-                      {section.heading}
-                    </h3>
+                    <h3 className="eyebrow mb-1.5">{section.heading}</h3>
                     <div className="divide-y divide-border/70 border-y border-border/70">
                       {section.terms.map((t) => {
                         const key = `${section.heading}:${t.term}`;

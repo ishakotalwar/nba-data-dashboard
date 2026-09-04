@@ -23,9 +23,9 @@ export function ViewTabs({
           key={view.v}
           onClick={() => onChange(view.v)}
           className={cn(
-            "whitespace-nowrap border px-3 py-1.5 text-sm transition",
+            "whitespace-nowrap border px-2.5 py-1 text-xs font-medium uppercase tracking-wider transition",
             view.v === value
-              ? "border-accent bg-accent/10 text-ink"
+              ? "border-accent2 bg-accent2/10 text-ink"
               : "border-transparent text-mute hover:border-border hover:text-ink"
           )}
         >

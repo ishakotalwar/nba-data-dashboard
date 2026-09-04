@@ -51,10 +51,10 @@ committed, so the deployed API calls nothing.
 - ESPN publishes no possession data, so ortg/drtg/pace are estimated with
   Oliver's formula rather than counted. Player stats can be read per game, per
   36 minutes, or per 75 or 100 possessions; the possession bases inherit that
-  estimate twice over, since a player's possessions are his minutes times his
-  team's pace and the box scores cannot say whether he played faster or slower
-  than his team. Changing the basis moves percentiles and ranks too, not just
-  the number shown.
+  estimate twice over, since a player's possessions are their minutes times
+  their team's pace and the box scores cannot say whether they played faster or
+  slower than their team. Changing the basis moves percentiles and ranks too,
+  not just the number shown.
 - It publishes no impact metric either — no BPM, no RPM — so the Impact page
   computes its own, and offers five ways to rank: a one-season RAPM, the same
   fit over a rolling three seasons, a version shrunk toward what the box score
@@ -66,7 +66,7 @@ committed, so the deployed API calls nothing.
   one per direction of play: the five attacking carry +1 in their offensive
   column, the five defending -1 in their defensive column, against points
   scored per 100 possessions. That gives each player an offensive and a
-  defensive number that read the same way (positive is good) and add up to his
+  defensive number that read the same way (positive is good) and add up to a
   total, plus a home-court term so the advantage isn't charged to whoever
   happened to be playing at home. The fit is ridged toward zero by a penalty
   fixed per league — re-choosing it each season would leave every season on a

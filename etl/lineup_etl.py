@@ -3,7 +3,7 @@
 ESPN publishes no lineup data, but it does publish substitutions, and a
 substitution is a lineup change. Walking a game's subs in order reconstructs
 who was on the floor for every second of it, which is the one thing the box
-scores cannot say: `players_*` knows what a player did, never who he did it
+scores cannot say: `players_*` knows what a player did, never who they did it
 alongside.
 
 The reconstruction needs a starting point for each period, and only the first
@@ -110,7 +110,7 @@ def real_games(pbp: pd.DataFrame) -> set:
 def _period_starters(period: pd.DataFrame, team: float) -> set:
     """Who was on the floor when this period tipped, inferred from the plays.
 
-    A player is a starter of the period if the first thing he does in it is not
+    A player is a starter of the period if the first thing they do in it is not
     entering the game: making a play, or being the one taken off the floor.
     """
     on: set = set()
@@ -332,9 +332,9 @@ def build_lineups(st: pd.DataFrame, box: pd.DataFrame, season: int) -> pd.DataFr
 # rebound, so points/poss = e * (1 + OREB/poss - TOV/poss) where e = points per
 # shot. Splitting that against the league's own rates isolates one skill each:
 #
-#   shot value   (e - e_lg) * (1 + OREB/poss - TOV/poss)   how well he scores
-#   rebounding    e_lg * (OREB/poss - oreb_lg)             how often he keeps it
-#   turnovers    -e_lg * (TOV/poss  - tov_lg)              how rarely he loses it
+#   shot value   (e - e_lg) * (1 + OREB/poss - TOV/poss)   how well they score
+#   rebounding    e_lg * (OREB/poss - oreb_lg)             how often kept
+#   turnovers    -e_lg * (TOV/poss  - tov_lg)              how rarely lost
 #
 # The three add back to points per 100 possessions short of a constant, which
 # the intercept absorbs, so the fitted coefficients still sum to the whole.
@@ -486,8 +486,9 @@ def build_ratings(st: pd.DataFrame, box: pd.DataFrame, season: int,
                   league: League) -> pd.DataFrame:
     """Offensive and defensive impact per player, broken into what caused it.
 
-    Raw plus-minus answers "what happened while he was out there", which is as
-    much a statement about his teammates and opponents as about him. The fix is
+    Raw plus-minus answers "what happened while they were out there", which is as
+    much a statement about a player's teammates and opponents as about the
+    player. The fix is
     to regress it: every possession has five players trying to score and five
     trying to stop them, so each of the ten gets credit for the outcome with the
     other nine held constant.
@@ -569,7 +570,7 @@ def build_ratings(st: pd.DataFrame, box: pd.DataFrame, season: int,
             off_poss += total[0] - slot[0]
             off_pf += total[1] - slot[1]
             off_pa += total[2] - slot[2]
-        # Team of record: where he played the most, matching the players table.
+        # Team of record: where they played the most, matching the players table.
         main_team = max(player_teams[p], key=lambda t: on[(p, t)][0])
         on_net = 100.0 * (p_pf - p_pa) / p_poss if p_poss else None
         off_net = 100.0 * (off_pf - off_pa) / off_poss if off_poss else None
@@ -771,7 +772,7 @@ def add_box_prior_ratings(ratings: pd.DataFrame, kept: dict, league: League
 
     Plain ridge pulls a thinly-played player toward average, which is the right
     instinct but the wrong target: the box score already says something about
-    him. Fitting a model from box-score rates to the plain RAPM gives a per
+    them. Fitting a model from box-score rates to the plain RAPM gives a per
     player expectation, and refitting with that as the centre keeps the stints
     as evidence while starting each player somewhere defensible.
 

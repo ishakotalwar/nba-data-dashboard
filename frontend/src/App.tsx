@@ -119,7 +119,9 @@ export default function App() {
               className="text-left"
               title="Back to the start"
             >
-              <div className="text-[15px] font-semibold leading-tight">Full Court</div>
+              <div className="font-display text-2xl font-bold leading-none tracking-tight">
+                Full<span className="text-accent">Court</span>
+              </div>
             </button>
           </div>
           <div className="flex items-center gap-3">
@@ -142,9 +144,10 @@ export default function App() {
                 <Tabs.Trigger
                   value={t.v}
                   className={cn(
-                   "-mb-px whitespace-nowrap border-b-2 border-transparent pb-2.5 text-sm text-mute transition",
-                   "data-[state=active]:border-accent data-[state=active]:text-ink",
-                   "hover:text-ink"
+                    "-mb-px whitespace-nowrap border-b-2 border-transparent pb-2.5",
+                    "font-display text-[17px] font-medium tracking-tight text-mute transition",
+                    "data-[state=active]:border-accent data-[state=active]:text-ink",
+                    "hover:text-ink"
                   )}
                 >
                   {t.label}

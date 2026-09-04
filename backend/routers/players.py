@@ -193,7 +193,7 @@ def player_ratings(season: str, league: str | None = None, team: str | None = No
                    metric: str = "rapm", limit: int = 250):
     """Impact ratings for one season, best first.
 
-    Each player's number is the points per 100 possessions he is responsible for
+    Each player's number is the points per 100 possessions they are responsible for
     once the other nine on the floor are regressed out, split into the offensive
     and defensive halves and the possession outcomes underneath them — see
     `etl/lineup_etl.py`.

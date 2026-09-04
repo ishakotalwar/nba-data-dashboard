@@ -162,7 +162,7 @@ def team_lineups(season: str, team: str | None = None, league: str | None = None
     """Five-man lineups for one season, either league-wide or for one team.
 
     Rebuilt from play-by-play substitutions by `etl/lineup_etl.py` — the box
-    scores say what a player did, only the substitutions say who he did it
+    scores say what a player did, only the substitutions say who they did it
     alongside.
     """
     lg = leagues.get(league)
@@ -252,7 +252,7 @@ def team_wowy(season: str, team: str, league: str | None = None,
     lasted. The combinations are exhaustive and add back to the team's season.
 
     Raw, deliberately: no adjustment for teammates or opponents, so it answers
-    "what happened when he sat" rather than "how good is he". The Impact page
+    "what happened when they sat" rather than "how good are they". The Impact page
     is where the adjusted version lives.
     """
     lg = leagues.get(league)

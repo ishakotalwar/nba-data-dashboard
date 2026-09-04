@@ -106,8 +106,8 @@ def _league_zone_rates(league_key: str, season: str,
 
     The comparison only means something if both sides are drawn from the same
     kind of game: playoff defenses are better, so a player's playoff shooting
-    against a regular-season league average would read as a decline he didn't
-    have.
+    against a regular-season league average would read as a decline that never
+    happened.
     """
     df = _of_type(_zoned(league_key), season_type)
     sub = df[df["season"] == str(season)]
