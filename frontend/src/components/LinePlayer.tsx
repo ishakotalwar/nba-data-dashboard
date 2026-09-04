@@ -70,7 +70,7 @@ function bow(from: P, to: P, amount: number): string {
 }
 
 // --- the pose -------------------------------------------------------------
-// Driving to his right, low dribble, off arm out for balance.
+// Driving right, low dribble, off arm out for balance.
 const HEAD: P = [356, 118];
 const SH_NEAR: P = [305, 196];
 const SH_FAR: P = [404, 188];

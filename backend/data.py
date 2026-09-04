@@ -76,8 +76,8 @@ IMPACT_METRICS = {
     "on_off": {
         "label": "On/off",
         "column": "on_off",
-        "blurb": "Raw team net rating with him on the floor minus without. "
-                 "Unadjusted, so it carries his teammates with it.",
+        "blurb": "Raw team net rating with a player on the floor minus without. "
+                 "Unadjusted, so it carries their teammates with it.",
     },
 }
 
@@ -268,13 +268,13 @@ def players_at(basis: str = "game", league: League = DEFAULT) -> pd.DataFrame:
     """`players`, with the counting stats restated on `basis`.
 
     Per-36 divides by minutes played. The possession bases divide by the
-    possessions the player's team used while he was on the floor, which nobody
-    publishes: it is his minutes times his team's pace, so they inherit two
-    approximations. The team's pace is Oliver's estimate rather than a count
-    (ESPN gives no possession data), and a player is assumed to have played at
-    his team's average pace rather than his own, which box scores cannot
-    separate.
-    Someone traded mid-season is priced at the pace of the team he played the
+    possessions the player's team used while they were on the floor, which
+    nobody publishes: it is their minutes times their team's pace, so they
+    inherit two approximations. The team's pace is Oliver's estimate rather than
+    a count (ESPN gives no possession data), and a player is assumed to have
+    played at their team's average pace rather than their own, which box scores
+    cannot separate.
+    Someone traded mid-season is priced at the pace of the team they played the
     most games for, since that is the only team the row records.
 
     Percentiles, filters and comparisons all read this, so a rate basis changes

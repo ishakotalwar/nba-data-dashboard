@@ -26,16 +26,16 @@ type Col = { key: string; label: string; title: string; strong?: boolean };
 const LOAD: Col = {
   key: "share",
   label: "Load",
-  title: "Share of his team's possessions he was on the floor for",
+  title: "Share of the team's possessions this player was on the floor for",
 };
 
 // Offence and defence only exist for the fits that split a possession in two.
 const SIDES: Col[] = [
-  { key: "off_rating", label: "Off", title: "What he adds on offense" },
+  { key: "off_rating", label: "Off", title: "What this player adds on offense" },
   {
     key: "def_rating",
     label: "Def",
-    title: "What he prevents on defense — positive is good, as on offense",
+    title: "What this player prevents on defense — positive is good, as on offense",
   },
 ];
 
@@ -95,7 +95,7 @@ export function Ratings({ meta }: { meta: Meta }) {
 
   const [season, setSeason] = useState(regularSeasons.at(-1) ?? "");
   const [team, setTeam] = useState("");
-  // Share of his team's possessions, so the bar means the same thing in either
+  // Share of the team's possessions, so the bar means the same thing in either
   // league and in a postseason a fifth the length of a season.
   const [minShare, setMinShare] = useState(55);
   const [scale, setScale] = useState<"per100" | "total">("per100");
@@ -152,7 +152,7 @@ export function Ratings({ meta }: { meta: Meta }) {
   // leaving the arrow on a column that is no longer there.
   useEffect(() => setSort({ key: ranked, dir: -1 }), [ranked]);
 
-  // Per 100 is what the model fits; total is that rate over the possessions he
+  // Per 100 is what the model fits; total is that rate over the possessions
   // actually played, which rewards the durability the rate deliberately ignores.
   const value = (row: any, key: string) =>
     scale === "total" && key !== "share" ? asTotal(row[key], row.poss) : row[key];
@@ -321,7 +321,7 @@ export function Ratings({ meta }: { meta: Meta }) {
           <CardBody className="p-0">
             {sorted.length === 0 ? (
               <div className="py-10 text-center text-sm text-mute">
-                No player played {minShare}% of his team's possessions.
+                No player played {minShare}% of their team's possessions.
               </div>
             ) : (
               <div className="max-h-[620px] overflow-auto">

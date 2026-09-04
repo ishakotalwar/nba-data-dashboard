@@ -63,7 +63,7 @@ def _season_per(g: pd.DataFrame, season_teams: pd.DataFrame) -> pd.DataFrame | N
     factor = ((2 / 3) - (0.5 * (total["ast_tot"] / total["fgm"]))
               / (2 * (total["fgm"] / total["ftm"]))) if total["ftm"] else 2 / 3
 
-    # A player's assist credit depends on how much of his team's scoring came
+    # A player's assist credit depends on how much of the team's scoring came
     # off assists, so the team's own ratio enters the per-player term.
     team = played.groupby("team_id")[["ast_tot", "fgm"]].sum()
     team_ratio = (team["ast_tot"] / team["fgm"].where(team["fgm"] > 0)).fillna(0)

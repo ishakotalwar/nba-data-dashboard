@@ -54,7 +54,7 @@ export type Meta = {
   player_ids: Record<string, number>;
   teams: string[];
   seasons: string[];
-  /** Seasons with rebuilt five-man lineups — a shorter list than `seasons`. */
+  /** Seasons with rebuilt five-player lineups — a shorter list than `seasons`. */
   lineup_seasons: string[];
   metrics: string[];
   /** Basis key -> label, e.g. { game: "Per game", per100: "Per 100 possessions" }. */

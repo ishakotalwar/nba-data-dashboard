@@ -8,6 +8,7 @@ import { TeamsSection } from "./components/panels/TeamsSection";
 import { Explorer } from "./components/panels/Explorer";
 import { AskFullCourt } from "@/components/AskFullCourt";
 import { Landing } from "@/components/Landing";
+import { Glossary } from "@/components/Glossary";
 import { PredictCalendar } from "@/components/panels/PredictCalendar";
 import { PredictTeams } from "@/components/panels/PredictTeams";
 import { PredictPlayers } from "@/components/panels/PredictPlayers";
@@ -125,6 +126,7 @@ export default function App() {
             <ModeSwitch mode={mode} onSwitch={switchMode} />
             <ThemeToggle />
             <LeagueToggle leagues={leagues} active={league} onChange={setLeague} />
+            <Glossary />
           </div>
         </div>
       </header>

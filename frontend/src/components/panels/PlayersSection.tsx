@@ -13,8 +13,8 @@ const VIEWS = [
   { v: "shots", label: "Shot Analysis" },
 ] as const;
 
-/** Everything about one player: the profile, who else played like him, and
- *  where he shot from. */
+/** Everything about one player: the profile, who else played like them, and
+ *  where they shot from. */
 export function PlayersSection({
   meta,
   view,

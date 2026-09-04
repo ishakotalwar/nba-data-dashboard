@@ -699,7 +699,7 @@ def _fit_to_team_minutes(league: League, players: list[dict],
     Minutes are the fixed resource, so they are shared out in proportion to
     what each player has earned, and every rate is carried across at the
     player's own per-minute production. A team-mate ruled out is simply absent
-    from the split, so his minutes flow to the others.
+    from the split, so those minutes flow to the others.
     """
     baseline = [max(float(r["minutes"] or 0.0), 0.0) for r in players]
     total = sum(baseline)
@@ -709,7 +709,7 @@ def _fit_to_team_minutes(league: League, players: list[dict],
     budget = float(league.team_minutes)
     cap = budget / 5 * MAX_MINUTES_SHARE
     # Weighting by minutes squared rather than minutes: a coach concentrates a
-    # rotation on his best players, so a starter keeps most of his workload
+    # rotation on the best players, so a starter keeps most of that workload
     # while the deep bench absorbs the squeeze. A flat split left a stacked
     # team's stars on 25 minutes, which no rotation looks like.
     weights = [b ** MINUTE_CONCENTRATION for b in baseline]

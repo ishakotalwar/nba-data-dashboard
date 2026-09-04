@@ -625,7 +625,7 @@ export function ShotAnalysis({ meta, seed }: { meta: Meta; seed?: any }) {
         if (!current()) return;
         setZones(null);
         // "No shots" is the ordinary answer for a player whose season ended
-        // before the playoffs, not a failure — and the panel knows his name,
+        // before the playoffs, not a failure — and the panel knows the name,
         // where the API only had an id to report.
         setErr(
           /no .* shots/i.test(e.message)

@@ -13,7 +13,7 @@ export function Landing({ onPick }: { onPick: (mode: "stats" | "predictions") =>
       <div className="text-center">
         <h1 className="text-3xl font-semibold tracking-tight text-ink">Full Court</h1>
         <p className="mt-2 text-sm text-mute">
-          NBA and WNBA analytics
+          NBA and WNBA analytics, 2003 to now
         </p>
       </div>
 
@@ -24,10 +24,12 @@ export function Landing({ onPick }: { onPick: (mode: "stats" | "predictions") =>
           title="Explore stats"
           blurb="What already happened."
           points={[
-            "Player-seasons, percentiles and league ranks",
-            "Historical similarity and side-by-side comparison",
-            "Shot charts by zone against the league",
-            "A filter stack over every season on record",
+            "Player pages with percentiles, per 36, 75 or 100 possessions",
+            "Five ways to rank impact, rebuilt from every substitution",
+            "Five-man lineups, and how a team played without any of them",
+            "Shot charts by zone, regular season or playoffs",
+            "Season similarity and side-by-side comparison",
+            "A filter stack over every player-season on record",
           ]}
           cta="Explore stats"
           onClick={() => onPick("stats")}

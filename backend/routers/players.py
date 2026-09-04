@@ -198,7 +198,7 @@ def player_ratings(season: str, league: str | None = None, team: str | None = No
     and defensive halves and the possession outcomes underneath them — see
     `etl/lineup_etl.py`.
 
-    The floor is a share of his team's possessions rather than a count of them,
+    The floor is a share of the team's possessions rather than a count of them,
     because a count means different things in different leagues and in a
     postseason. It matters more than a floor usually does: a rating over a
     fraction of a season is a real estimate with real uncertainty, and part-time

@@ -27,10 +27,10 @@ const COLS = [
  * exhaustive — they add back to the team's whole season.
  *
  * Deliberately unadjusted: this is the raw split, teammates and opponents
- * included, which answers "what happened when he sat" rather than "how good is
- * he". The Impact page carries the adjusted version, and the two disagreeing is
- * usually the interesting part — a team that collapses without a player may
- * only be telling you about his backup.
+ * included, which answers "what happened when they sat" rather than "how good
+ * are they". The Impact page carries the adjusted version, and the two
+ * disagreeing is usually the interesting part — a team that collapses without a
+ * player may only be telling you about their backup.
  */
 export function Wowy({ meta }: { meta: Meta }) {
   const seasons = meta.lineup_seasons ?? [];

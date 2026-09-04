@@ -8,18 +8,18 @@ alongside.
 
 The reconstruction needs a starting point for each period, and only the first
 one is given (`player_box.starter`). For the rest, a player was on the floor at
-the tip of a period if his first appearance in it is anything other than being
+the tip of a period if their first appearance in it is anything other than being
 subbed *in* — a shot, a foul, a rebound, or being subbed *out*. That resolves
 essentially every team-period; the handful it doesn't are patched from whoever
 finished the previous period. See `--validate`, which checks the rebuilt
 minutes against the box score and prints the error.
 
 Outputs two files per league. `data/lineup_<league>.parquet` has one row per
-season, team and five-man group, with minutes, possessions and points for and
+season, team and five-player group, with minutes, possessions and points for and
 against. `data/rating_<league>.parquet` has one row per player-season: the
-margin per 100 possessions the stints say he is responsible for once his
-teammates and opponents are regressed out (RAPM), beside the raw on-court and
-on-off numbers it adjusts.
+margin per 100 possessions the stints say a player is responsible for once
+their teammates and opponents are regressed out (RAPM), beside the raw on-court
+and on-off numbers it adjusts.
 
 Play-by-play is ~20 MB a season and none of it is committed — only the
 aggregate, which is a few MB for two decades of both leagues.
@@ -291,7 +291,7 @@ def _one_sided(st: pd.DataFrame, side: str, other: str) -> pd.DataFrame:
 
 
 def build_lineups(st: pd.DataFrame, box: pd.DataFrame, season: int) -> pd.DataFrame:
-    """Stints -> one row per five-man group."""
+    """Stints -> one row per five-player group."""
     both = pd.concat([_one_sided(st, "home", "away"), _one_sided(st, "away", "home")])
     agg = both.groupby(["team_id", "five"], as_index=False).agg(
         seconds=("seconds", "sum"), poss=("poss", "sum"),
@@ -340,7 +340,7 @@ def build_lineups(st: pd.DataFrame, box: pd.DataFrame, season: int) -> pd.DataFr
 # the intercept absorbs, so the fitted coefficients still sum to the whole.
 # Pricing the last two at the league's efficiency rather than the stint's own is
 # what keeps shooting out of them — otherwise a good shooter's efficiency leaks
-# into his turnover and rebounding numbers.
+# into their turnover and rebounding numbers.
 VALUE_PARTS = ["field_goals", "free_throws", "second_chance", "turnovers"]
 
 # How hard the fit is pulled toward zero: a prior on how far from average a

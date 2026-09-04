@@ -16,9 +16,9 @@ const TITLE: Record<string, string> = {
     "Counting stats per 75 possessions — roughly what a starter uses in a " +
     "game, so the numbers stay close to the per-game ones they replace",
   per100:
-    "Counting stats per 100 possessions the player's team used while he was " +
-    "on the floor — his minutes times his team's pace, since ESPN publishes " +
-    "no possession data",
+    "Counting stats per 100 possessions the player's team used while they " +
+    "were on the floor — their minutes times their team's pace, since ESPN " +
+    "publishes no possession data",
 };
 
 /**

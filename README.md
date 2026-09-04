@@ -5,7 +5,7 @@ NBA and WNBA analytics, 2003 to now. Live at <https://full-court-six.vercel.app>
 ![Player overview](docs/screenshot.png)
 
 Stats side: player pages with percentiles and career trends, comparison, season
-similarity, shot charts, team tables, five-man lineups, WOWY splits, player
+similarity, shot charts, team tables, five-player lineups, WOWY splits, player
 impact ratings, and an explorer over every player-season, with counting stats on
 any of four rate bases. The Ask box turns natural language questions into queries.
 
