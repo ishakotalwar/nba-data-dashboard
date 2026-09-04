@@ -5,9 +5,9 @@ NBA and WNBA analytics, 2003 to now. Live at <https://full-court-six.vercel.app>
 ![Player overview](docs/screenshot.png)
 
 Stats side: player pages with percentiles and career trends, comparison, season
-similarity, shot charts, team tables, five-man lineups, with-or-without splits,
-player impact ratings, and an explorer over every player-season, with counting
-stats on any of four rate bases. The Ask box turns natural language questions into queries.
+similarity, shot charts, team tables, five-man lineups, WOWY splits, player
+impact ratings, and an explorer over every player-season, with counting stats on
+any of four rate bases. The Ask box turns natural language questions into queries.
 
 Predictions side: a game calendar with win probabilities and projected player
 lines, Elo ratings, and a search for any player's next season.
@@ -68,12 +68,13 @@ committed, so the deployed API calls nothing.
   times the possessions constrain it far less. Postseasons are fit separately
   where they are long enough to hold a rating, which no WNBA one is. It covers
   the same seasons the lineups do.
-- The with-or-without splits are built from every stint rather than from the
-  lineup table, which keeps only fives that played five minutes together. Those
-  short-lived fives are mostly bench units — the very minutes the "without" half
-  is made of — so the splits would otherwise be biased against the thing they
-  exist to measure. They are raw: no adjustment for teammates or opponents,
-  which is what the Impact page is for.
+- The lineup table stores every five a team used, not just the ones that
+  lasted. The tail is most of the rows and little of the time, but it is what
+  makes the WOWY splits exact: each possession belongs to exactly one
+  five, so any group of players is answered by adding up the fives containing
+  them, and the combinations come out exhaustive. Dropping the tail would bias
+  every "without" bucket toward the starters. Those splits are raw — no
+  adjustment for teammates or opponents, which is what the Impact page is for.
 - It publishes no lineup data either, but it does publish substitutions, so
   lineups are rebuilt by walking them. `--validate` checks the rebuilt minutes
   against the box score: they land within a minute for 99.5% of NBA

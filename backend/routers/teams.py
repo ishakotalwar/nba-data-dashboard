@@ -196,97 +196,123 @@ def team_lineups(season: str, team: str | None = None, league: str | None = None
     })
 
 
-# The row carrying a team's own totals, written by etl/lineup_etl.py.
-TEAM_TOTAL_ID = 0
+# More than this and the table is 32 rows of mostly-empty combinations.
+MAX_WOWY_PLAYERS = 4
+
+# A combination has to have been on the floor this long to be worth a row.
+MIN_COMBINATION_MINUTES = 1.0
 
 
-def _split(name: str, row: dict) -> dict:
-    """One cell of the with/without square, as rates."""
-    poss = row["poss"]
-    net = (100 * (row["pts_for"] - row["pts_against"]) / poss) if poss > 0 else None
+def _rates(label: str, rows: pd.DataFrame, on: list[str], off: list[str]) -> dict:
+    """One combination of players on the floor, as totals and rates."""
+    poss = float(rows["poss"].sum())
+    pf, pa = int(rows["pts_for"].sum()), int(rows["pts_against"].sum())
+    net = (100 * (pf - pa) / poss) if poss > 0 else None
     return {
-        "label": name,
-        "min": round(row["min"], 1),
+        "label": label,
+        "on": on,
+        "off": off,
+        "min": round(float(rows["min"].sum()), 1),
         "poss": round(poss, 1),
-        "pts_for": int(row["pts_for"]),
-        "pts_against": int(row["pts_against"]),
-        "ortg": round(100 * row["pts_for"] / poss, 1) if poss > 0 else None,
-        "drtg": round(100 * row["pts_against"] / poss, 1) if poss > 0 else None,
+        "pts_for": pf,
+        "pts_against": pa,
+        "ortg": round(100 * pf / poss, 1) if poss > 0 else None,
+        "drtg": round(100 * pa / poss, 1) if poss > 0 else None,
         "net": None if net is None else round(net, 1),
     }
 
 
-def _combine(*parts) -> dict:
-    """Add and subtract stored totals: (totals, sign) pairs."""
-    out = {k: 0.0 for k in ("min", "poss", "pts_for", "pts_against")}
-    for row, sign in parts:
-        for k in out:
-            out[k] += sign * (row[k] if row else 0.0)
-    return out
+def _surname(name: str) -> str:
+    """Everything after the first name, so "Jaren Jackson Jr." keeps its suffix.
+    Combination labels stack up to four names and a full one each would run off
+    the row."""
+    first, _, rest = name.partition(" ")
+    return rest or first
+
+
+def _combination_label(on: list[str], off: list[str]) -> str:
+    """Who was on the floor. Naming both halves — "A without B + C" — reads as
+    if the absent names qualify the present one, so the label carries only the
+    players who were out there and the table marks the rest as off."""
+    if len(on) + len(off) == 1:
+        return f"{on[0]} on" if on else f"{off[0]} off"
+    if not on:
+        return "None of them"
+    return " + ".join(_surname(n) for n in on)
 
 
 @router.get("/wowy")
 def team_wowy(season: str, team: str, league: str | None = None,
-              player_a: int | None = None, player_b: int | None = None):
-    """How a team played with and without one player, or a pair of them.
+              players: str | None = None):
+    """How a team played with and without any group of its players.
 
-    Raw on-off, deliberately: no opponent or teammate adjustment, so it answers
+    Every possession belongs to exactly one five, so a group of players is
+    answered by adding up the lineups that contain them — which is why the
+    lineup table stores every five a team used rather than only the ones that
+    lasted. The combinations are exhaustive and add back to the team's season.
+
+    Raw, deliberately: no adjustment for teammates or opponents, so it answers
     "what happened when he sat" rather than "how good is he". The Impact page
-    is where the adjusted version lives. Built from every stint, so the splits
-    add back up to the team's whole season.
+    is where the adjusted version lives.
     """
     lg = leagues.get(league)
-    df = data.wowy(lg)
+    df = data.lineups(lg)
     if df is None:
-        raise HTTPException(404, f"No {lg.label} with/without data. "
+        raise HTTPException(404, f"No {lg.label} lineup data. "
                                  f"Run `python etl/lineup_etl.py --league {lg.key}`.")
-    sub = df[(df["season"] == str(season)) & (df["team_name"] == team)]
+    sub = df[(df["season"] == str(season)) & (df["team_name"] == team)].copy()
     if sub.empty:
-        raise HTTPException(404, f"No {lg.label} {season} data for {team}")
+        raise HTTPException(404, f"No {lg.label} {season} lineups for {team}")
 
-    singles = sub[(sub["player_a"] == sub["player_b"])
-                  & (sub["player_a"] != TEAM_TOTAL_ID)]
-    roster = [{"player_id": int(r.player_a), "name": r.name_a, "min": round(r.min, 1)}
-              for r in singles.sort_values("min", ascending=False).itertuples()]
-    total = sub[sub["player_a"] == TEAM_TOTAL_ID].iloc[0].to_dict()
+    # Who played, and how much, from the fives themselves.
+    minutes: dict = {}
+    names: dict = {}
+    id_sets = []
+    for ids, player_names, mins in zip(sub["player_ids"], sub["player_names"], sub["min"]):
+        group = [int(i) for i in ids.split("|")]
+        id_sets.append(set(group))
+        for pid, name in zip(group, player_names.split("|")):
+            names[pid] = name
+            minutes[pid] = minutes.get(pid, 0.0) + float(mins)
+    sub["five"] = id_sets
 
-    def stored(a: int, b: int) -> dict | None:
-        lo, hi = sorted((a, b))
-        hit = sub[(sub["player_a"] == lo) & (sub["player_b"] == hi)]
-        return hit.iloc[0].to_dict() if len(hit) else None
+    roster = [{"player_id": pid, "name": names[pid], "min": round(mins, 1)}
+              for pid, mins in sorted(minutes.items(), key=lambda kv: -kv[1])]
+    total = _rates(team, sub, [], [])
+
+    picked: list[int] = []
+    if players:
+        try:
+            picked = [int(p) for p in players.split(",") if p.strip()]
+        except ValueError:
+            raise HTTPException(400, "players must be a comma-separated list of ids")
+        unknown = [p for p in picked if p not in names]
+        if unknown:
+            raise HTTPException(404, f"No {team} {season} minutes for player(s): "
+                                     f"{', '.join(str(u) for u in unknown)}")
+        if len(picked) > MAX_WOWY_PLAYERS:
+            raise HTTPException(400, f"At most {MAX_WOWY_PLAYERS} players at once — "
+                                     f"beyond that the split is mostly empty rows.")
 
     rows: list[dict] = []
-    if player_a:
-        on_a = stored(player_a, player_a)
-        if on_a is None:
-            raise HTTPException(404, f"Player {player_a} did not play for {team} in {season}")
-        name_a = on_a["name_a"]
-        if player_b:
-            on_b = stored(player_b, player_b)
-            if on_b is None:
-                raise HTTPException(404, f"Player {player_b} did not play for {team} in {season}")
-            name_b = on_b["name_a"]
-            both = stored(player_a, player_b)
-            if both is None:
-                raise HTTPException(
-                    404, f"{name_a} and {name_b} never shared the floor for long enough")
-            rows = [
-                _split(f"{name_a} + {name_b}", _combine((both, 1))),
-                _split(f"{name_a} without {name_b}", _combine((on_a, 1), (both, -1))),
-                _split(f"{name_b} without {name_a}", _combine((on_b, 1), (both, -1))),
-                # Everything the team played that neither of them was part of.
-                _split("Neither", _combine((total, 1), (on_a, -1), (on_b, -1), (both, 1))),
-            ]
-        else:
-            rows = [
-                _split(f"{name_a} on", _combine((on_a, 1))),
-                _split(f"{name_a} off", _combine((total, 1), (on_a, -1))),
-            ]
+    if picked:
+        # Each five falls into exactly one combination: which of the picked
+        # players were part of it.
+        key = sub["five"].map(lambda f: tuple(p for p in picked if p in f))
+        for combination, group in sub.groupby(key, sort=False):
+            on = [names[p] for p in combination]
+            off = [names[p] for p in picked if p not in combination]
+            entry = _rates(_combination_label(on, off), group, on, off)
+            if entry["min"] >= MIN_COMBINATION_MINUTES:
+                rows.append(entry)
+        rows.sort(key=lambda r: r["min"], reverse=True)
 
     return analytics.json_safe({
         "season": str(season), "league": lg.key, "team": team,
+        "players": picked,
+        "max_players": MAX_WOWY_PLAYERS,
         "roster": roster,
-        "team_total": _split(team, total),
+        "team_total": total,
         "rows": rows,
     })
 

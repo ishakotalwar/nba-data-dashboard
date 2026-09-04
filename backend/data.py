@@ -184,15 +184,6 @@ def rating_seasons(league: League = DEFAULT, season_type: str = "regular") -> li
 
 
 @lru_cache(maxsize=8)
-def wowy(league: League = DEFAULT) -> pd.DataFrame | None:
-    """What a team did with each player and pair on the floor, or None if
-    `etl/lineup_etl.py` hasn't run. Built from every stint, so it covers a
-    team's whole season rather than the lineups long enough to store."""
-    df = _load_optional("wowy", league)
-    return _with_season_str(df) if df is not None else None
-
-
-@lru_cache(maxsize=8)
 def schedule(league: League = DEFAULT) -> pd.DataFrame | None:
     """Scheduled games for this league, or None if the schedule ETL hasn't run.
 

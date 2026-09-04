@@ -217,19 +217,13 @@ export const api = {
       })}`
     ).then((r) => j<any>(r)),
 
-  /** What a team did with a player on the floor, and without him. */
-  teamWowy: (
-    season: string,
-    team: string,
-    league: LeagueKey,
-    opts: { playerA?: number; playerB?: number } = {}
-  ) =>
+  /** How a team played with and without any group of its players. */
+  teamWowy: (season: string, team: string, league: LeagueKey, players: number[] = []) =>
     fetch(
       `${BASE}/teams/wowy?${q_(league, {
         season,
         team,
-        ...(opts.playerA ? { player_a: String(opts.playerA) } : {}),
-        ...(opts.playerB ? { player_b: String(opts.playerB) } : {}),
+        ...(players.length ? { players: players.join(",") } : {}),
       })}`
     ).then((r) => j<any>(r)),
 

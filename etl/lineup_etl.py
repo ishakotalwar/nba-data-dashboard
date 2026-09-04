@@ -16,8 +16,7 @@ minutes against the box score and prints the error.
 
 Outputs two files per league. `data/lineup_<league>.parquet` has one row per
 season, team and five-man group, with minutes, possessions and points for and
-against. `data/wowy_<league>.parquet` has what a team did with each player and each pair
-of them on the floor. `data/rating_<league>.parquet` has one row per player-season: the
+against. `data/rating_<league>.parquet` has one row per player-season: the
 margin per 100 possessions the stints say he is responsible for once his
 teammates and opponents are regressed out (RAPM), beside the raw on-court and
 on-off numbers it adjusts.
@@ -72,11 +71,13 @@ MIN_PLAYOFF_STINTS = 800
 # feed is unusable before 2020 (58% in 2015, 88% in 2019, 99.4% from 2020).
 FIRST_SEASON = {"nba": 2015, "wnba": 2020}
 
-# A team uses about 375 different fives a season, most of them for one dead
-# stretch each: net rating over two possessions is noise, and storing the tail
-# would double the repo's committed data. Five minutes keeps 178 lineups a team
-# and 83% of the minutes played. `team_min` records what was dropped.
-MIN_LINEUP_SECONDS = 300.0
+# Every five a team used, including the ones that played one dead stretch. The
+# tail is most of the rows and little of the time — a floor of five minutes
+# would cut the file to a fifth — but it is what makes the with-or-without
+# splits exact: each possession belongs to exactly one five, so any group of
+# players can be answered by adding up the fives that contain them, and a
+# missing tail would quietly bias every "without" bucket toward the starters.
+MIN_LINEUP_SECONDS = 0.0
 
 
 def url_for(league: League, dataset: str, filename: str, season: int) -> str:
@@ -570,76 +571,6 @@ def build_ratings(st: pd.DataFrame, box: pd.DataFrame, season: int,
     return frame.sort_values("rapm", ascending=False).reset_index(drop=True)
 
 
-# A pair has to share this much floor time to be worth storing. Below it the
-# "together" split is a handful of possessions and says nothing.
-MIN_PAIR_SECONDS = 120.0
-
-# The row that carries a team's own totals, so "neither player on" can be
-# recovered by inclusion-exclusion without storing a fourth combination.
-TEAM_TOTAL_ID = 0
-
-
-def build_wowy(st: pd.DataFrame, box: pd.DataFrame, season: int) -> pd.DataFrame:
-    """What a team did with each player, and each pair of players, on the floor.
-
-    Stored as totals rather than the four with/without combinations, because
-    three of them are implied: a team's time with A but not B is its time with A
-    minus its time with both, and its time with neither is the team total less
-    each of them plus the overlap. So one row per pair, one per player (a pair
-    with himself) and one for the team is enough to rebuild the whole square.
-
-    This is built from every stint rather than from the lineup table, which
-    keeps only fives that played five minutes together. Those short-lived fives
-    are disproportionately bench units — exactly the minutes the "without" half
-    of the comparison is made of — so leaving them out would bias the one thing
-    the page exists to show.
-    """
-    totals: dict = defaultdict(lambda: [0.0, 0.0, 0.0, 0.0])  # secs, poss, pf, pa
-
-    home_poss = (st["home_fga"] + 0.44 * st["home_fta"]
-                 - st["home_oreb"] + st["home_tov"])
-    away_poss = (st["away_fga"] + 0.44 * st["away_fta"]
-                 - st["away_oreb"] + st["away_tov"])
-    poss = (0.5 * (home_poss + away_poss)).to_numpy(dtype=float)
-
-    for i, r in enumerate(st.itertuples()):
-        for five, team, pf, pa in ((r.home_five, r.home_id, r.home_pts, r.away_pts),
-                                   (r.away_five, r.away_id, r.away_pts, r.home_pts)):
-            for slot in (totals[(team, TEAM_TOTAL_ID, TEAM_TOTAL_ID)],):
-                slot[0] += r.seconds; slot[1] += poss[i]; slot[2] += pf; slot[3] += pa
-            group = sorted(five)
-            for a_i, a in enumerate(group):
-                for b in group[a_i:]:          # includes (a, a): the player alone
-                    slot = totals[(team, a, b)]
-                    slot[0] += r.seconds; slot[1] += poss[i]
-                    slot[2] += pf; slot[3] += pa
-
-    names = dict(zip(box["athlete_id"].astype(float), box["athlete_display_name"]))
-    teams = (box.drop_duplicates("team_id")
-                .set_index("team_id")[["team_display_name", "team_abbreviation"]])
-    rows = []
-    for (team, a, b), (secs, p, pf, pa) in totals.items():
-        # Team and single-player rows are always kept; a pair has to clear the
-        # floor, or a team carries a hundred rows of noise.
-        if a != b and a != TEAM_TOTAL_ID and secs < MIN_PAIR_SECONDS:
-            continue
-        rows.append({
-            "season": str(season),
-            "team_id": int(team),
-            "team_name": teams["team_display_name"].get(team),
-            "team_abbr": teams["team_abbreviation"].get(team),
-            "player_a": int(a),
-            "player_b": int(b),
-            "name_a": names.get(a) if a else None,
-            "name_b": names.get(b) if b else None,
-            "min": round(secs / 60, 1),
-            "poss": round(p, 1),
-            "pts_for": int(pf),
-            "pts_against": int(pa),
-        })
-    return pd.DataFrame(rows)
-
-
 def validate(played_seconds: dict, box: pd.DataFrame) -> None:
     """Compare rebuilt minutes against the box score, and say how far off."""
     rebuilt = pd.Series(played_seconds, dtype=float) / 60
@@ -687,7 +618,7 @@ def _of_season_type(pbp: pd.DataFrame, box: pd.DataFrame, code: int
 
 
 def season_lineups(league: League, season: int, check: bool
-                   ) -> tuple[pd.DataFrame, pd.DataFrame, pd.DataFrame] | None:
+                   ) -> tuple[pd.DataFrame, pd.DataFrame] | None:
     """Rebuild one season, returning its lineups and its player ratings.
 
     Lineups are the regular season only — a five that played three playoff
@@ -710,7 +641,6 @@ def season_lineups(league: League, season: int, check: bool
     print(f"  {season}: {regular_pbp['game_id'].nunique():>4} games, {len(st):>6} stints, "
           f"{len(lineups):>5} lineups")
     rated = [build_ratings(st, regular_box, season, league).assign(season_type="regular")]
-    wowy = build_wowy(st, regular_box, season)
     if check:
         validate(played_seconds, regular_box)
 
@@ -725,8 +655,7 @@ def season_lineups(league: League, season: int, check: bool
         else:
             print(f"        playoffs: only {len(post)} stints, too few to fit")
 
-    return (lineups, pd.concat([r for r in rated if not r.empty], ignore_index=True),
-            wowy)
+    return lineups, pd.concat([r for r in rated if not r.empty], ignore_index=True)
 
 
 def main(argv=None) -> None:
@@ -755,9 +684,6 @@ def main(argv=None) -> None:
                  [True, True, False])
     write_merged(pd.concat([b[1] for b in built], ignore_index=True),
                  f"rating{league.suffix}", ["season", "season_type", "rapm"],
-                 [True, True, False])
-    write_merged(pd.concat([b[2] for b in built], ignore_index=True),
-                 f"wowy{league.suffix}", ["season", "team_abbr", "min"],
                  [True, True, False])
 
 
